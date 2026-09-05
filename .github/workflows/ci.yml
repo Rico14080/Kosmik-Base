@@ -63,13 +63,9 @@ jobs:
           grep -q 'admin.css' admin.html
           grep -q 'admin.js' admin.html
           grep -q 'admin-ops.js' admin.html
-          grep -q 'site-fixes.js' index.html
-          grep -q 'site-fixes.js' shop.html
-          grep -q 'site-fixes.js' cart.html
-          grep -q 'site-fixes.js' gallery.html
-          grep -q 'site-fixes.js' live.html
-          grep -q 'site-fixes.js' contact.html
-          grep -q 'site-fixes.js' us.html
+          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html 404.html; do
+            grep -q 'site-fixes.js' "$f"
+          done
 
       - name: Block committed secrets
         shell: bash
