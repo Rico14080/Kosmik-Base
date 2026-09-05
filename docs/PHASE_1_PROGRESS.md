@@ -21,7 +21,7 @@ Branch di lavoro: `development`
 
 ## Validation
 
-- GitHub CI run #85 — PASS for frontend file inventory, JavaScript syntax, Python compilation, Phase 1 checkout regression suite, Admin/CSP resource wiring and secret/database guard. fileciteturn337file0
+- GitHub CI run #85 — PASS for frontend file inventory, JavaScript syntax, Python compilation, Phase 1 checkout regression suite, Admin/CSP resource wiring and secret/database guard.
 - Phase 1 checkout suite — PASS: concurrent reservation, provider-confirmed stock deduction, and expired reservation release.
 - Admin operations controller — validated by CI syntax check and loaded as a dedicated external script.
 - Backend API smoke tests from the local staging copy — PASS for health/content and protected Admin endpoints where browser navigation was not required.
