@@ -19,6 +19,13 @@ jobs:
             test -f "$f"
           done
 
+      - name: Validate frontend JavaScript
+        shell: bash
+        run: |
+          set -e
+          node --check site.js
+          if test -f admin.js; then node --check admin.js; fi
+
       - name: Validate Python sources when present
         shell: bash
         run: |
