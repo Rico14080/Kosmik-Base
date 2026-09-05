@@ -48,7 +48,7 @@ def test_atomic_concurrent_reservation():
             expiry = server.reservation_expiry()
             c.execute(
                 "INSERT INTO orders(id,email,total_cents,status,payment_status,shipping_status,items_json,stock_reserved,reservation_expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (order_id, "test@example.com", 3000, "NEW", "UNPAID", "UNFULFILLED", json.dumps([{"productId": pid, "quantity": 3}]), 1, expiry, server.now(), server.now()),
+                (order_id, "test@example.com", 3000, "NEW", "UNPAID", "UNFULFILLED", json.dumps([{"productId": pid, "quantity": 3}]), 3, expiry, server.now(), server.now()),
             )
             c.commit()
             result = "success"
@@ -61,14 +61,16 @@ def test_atomic_concurrent_reservation():
             outcomes.append(result)
 
     threads = [threading.Thread(target=worker, args=(f"T{i}",)) for i in range(2)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
     assert sorted(outcomes) == ["fail", "success"], outcomes
 
     c = server.db()
     row = c.execute("SELECT stock,reserved_stock FROM products WHERE id=?", (pid,)).fetchone()
     assert row["stock"] == 5 and row["reserved_stock"] == 3
-    order = c.execute("SELECT id FROM orders WHERE stock_reserved=1").fetchone()
+    order = c.execute("SELECT id FROM orders WHERE stock_reserved=3").fetchone()
     assert order is not None
     ok = server.apply_paid_order(c, order["id"], "cs_test")
     c.commit()
