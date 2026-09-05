@@ -4,8 +4,10 @@ const API=(location.protocol==='http:'||location.protocol==='https:')?`${locatio
 let token=sessionStorage.getItem('kosmik_admin_token')||'';
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-const auth=()=>token?{Authorization:`Bearer ${token}`}:{};
+const auth=()=>token?{Authorization:`Bearer ${token}`} : {};
 async function api(path,opts={}){
+  token=sessionStorage.getItem('kosmik_admin_token')||'';
+  if(!token)throw new Error('Not authenticated.');
   const headers={Accept:'application/json',...auth(),...(opts.headers||{})};
   if(opts.body&&!(opts.body instanceof Blob))headers['Content-Type']='application/json';
   let r;
@@ -20,7 +22,7 @@ function formatDate(value){const d=new Date(value);return Number.isNaN(d.getTime
 function itemSummary(itemsJson){
   try{
     const items=JSON.parse(itemsJson||'[]');
-    return items.map(item=>`${Number(item.quantity)||0} × ${esc(item.name||'Product')} (€ ${(Number(item.priceCents)||0)/100}`).join('<br>');
+    return items.map(item=>`${Number(item.quantity)||0} × ${esc(item.name||'Product')} (€ ${(Number(item.priceCents)||0)/100})`).join('<br>');
   }catch{return ''}
 }
 async function renderOrdersOps(){
@@ -63,12 +65,17 @@ async function deleteMessage(button){
     await renderMessagesOps();
   }catch(e){statusMessage(e.message)}
 }
+async function waitForAuthentication(){
+  for(let i=0;i<120;i++){
+    token=sessionStorage.getItem('kosmik_admin_token')||'';
+    if(token){await renderOrdersOps();await renderMessagesOps();return}
+    await new Promise(resolve=>setTimeout(resolve,250));
+  }
+}
 function bind(){
   document.addEventListener('change',e=>{const s=e.target.closest('[data-order-status]');if(s)updateOrderStatus(s)});
   document.addEventListener('click',e=>{const b=e.target.closest('[data-delete-message]');if(b)deleteMessage(b)});
-  const observer=new MutationObserver(()=>{const ready=Boolean($('orders-list')&&$('messages-list'));if(ready&&!document.body.dataset.opsRendered){document.body.dataset.opsRendered='1';renderOrdersOps();renderMessagesOps()}});
-  observer.observe(document.body,{childList:true,subtree:true});
-  if($('orders-list')&&$('messages-list')){document.body.dataset.opsRendered='1';renderOrdersOps();renderMessagesOps()}
+  waitForAuthentication().catch(e=>statusMessage(e.message));
 }
 bind();
 })();
