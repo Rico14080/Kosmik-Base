@@ -1,0 +1,46 @@
+name: Kosmik Circles CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check expected frontend files
+        shell: bash
+        run: |
+          set -e
+          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html admin.html 404.html site.js style.css site.webmanifest robots.txt security.txt; do
+            test -f "$f"
+          done
+
+      - name: Validate Python sources when present
+        shell: bash
+        run: |
+          set -e
+          files=(backend/server.py backend/backup.py backend/seed_gallery_demo.py backend/seed_temp_image_slots.py backend/tests/smoke_test.py check_image_slots.py)
+          present=()
+          for f in "${files[@]}"; do
+            if test -f "$f"; then present+=("$f"); fi
+          done
+          if [ ${#present[@]} -gt 0 ]; then
+            python -m py_compile "${present[@]}"
+          fi
+
+      - name: Block committed secrets
+        shell: bash
+        run: |
+          set -e
+          if git grep -nE 'sk_live_[A-Za-z0-9]+' -- . ':(exclude).github/workflows/ci.yml'; then
+            echo 'Potential live Stripe secret found in repository.'
+            exit 1
+          fi
+          if git ls-files | grep -E '(^|/)(\.env|.*\.db|.*\.sqlite3?)$'; then
+            echo 'Environment/database file is tracked by Git.'
+            exit 1
+          fi
