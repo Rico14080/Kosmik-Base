@@ -15,7 +15,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html admin.html 404.html site.js style.css site.webmanifest robots.txt security.txt; do
+          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html admin.html 404.html site.js checkout-fix.js style.css site.webmanifest robots.txt security.txt; do
             test -f "$f"
           done
 
@@ -24,13 +24,14 @@ jobs:
         run: |
           set -e
           node --check site.js
+          node --check checkout-fix.js
           if test -f admin.js; then node --check admin.js; fi
 
       - name: Validate Python sources when present
         shell: bash
         run: |
           set -e
-          files=(backend/server.py backend/backup.py backend/seed_gallery_demo.py backend/seed_temp_image_slots.py backend/tests/smoke_test.py check_image_slots.py)
+          files=(backend/server.py backend/backup.py backend/seed_gallery_demo.py backend/seed_temp_image_slots.py backend/tests/smoke_test.py backend/tests/phase1_checkout_test.py check_image_slots.py)
           present=()
           for f in "${files[@]}"; do
             if test -f "$f"; then present+=("$f"); fi
@@ -38,6 +39,12 @@ jobs:
           if [ ${#present[@]} -gt 0 ]; then
             python -m py_compile "${present[@]}"
           fi
+
+      - name: Run Phase 1 checkout regression tests
+        shell: bash
+        run: |
+          set -e
+          python backend/tests/phase1_checkout_test.py
 
       - name: Block committed secrets
         shell: bash
