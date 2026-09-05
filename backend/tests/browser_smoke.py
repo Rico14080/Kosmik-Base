@@ -41,11 +41,12 @@ def main() -> None:
             page_errors.clear()
             url = f"{base_url}/{path}"
             try:
-                response = page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                response = page.goto(url, wait_until="commit", timeout=15_000)
                 if response is None or response.status != 200:
                     failures.append(f"{path}: HTTP {response.status if response else 'no response'}")
                     continue
 
+                page.wait_for_selector("header.site-header", state="visible", timeout=10_000)
                 title = page.title()
                 if "Kosmik Circles" not in title:
                     failures.append(f"{path}: unexpected title {title!r}")
