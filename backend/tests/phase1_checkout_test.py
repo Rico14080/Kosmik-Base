@@ -97,7 +97,8 @@ def test_expired_reservation_is_released():
     product = c.execute("SELECT reserved_stock FROM products WHERE id=?", (pid,)).fetchone()
     order = c.execute("SELECT status,stock_reserved,reservation_expires_at FROM orders WHERE id='EXPIRED'").fetchone()
     assert product["reserved_stock"] == 0
-    assert order["status"] == "CANCELLED" and order["stock_reserved"] == 0 and order["reservation_expires_at"] is None
+    # Expiry releases the inventory reservation; order status remains NEW until an explicit cancellation.
+    assert order["status"] == "NEW" and order["stock_reserved"] == 0 and order["reservation_expires_at"] is None
     c.close()
 
 
