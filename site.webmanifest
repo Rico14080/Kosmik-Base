@@ -1,0 +1,9 @@
+{
+  "name": "Kosmik Circles",
+  "short_name": "Kosmik Circles",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#090909",
+  "theme_color": "#090909",
+  "lang": "en"
+}

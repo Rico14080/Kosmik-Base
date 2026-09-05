@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin.html
+Disallow: /V1.1_CHANGELOG.md
+Disallow: /PHASE1_STATUS.md
+Disallow: /PHASE1_2_STATUS.md
+Disallow: /README_V1.1.md
