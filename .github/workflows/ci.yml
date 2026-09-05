@@ -15,7 +15,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html admin.html 404.html site.js checkout-fix.js style.css site.webmanifest robots.txt security.txt; do
+          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html admin.html 404.html site.js checkout-fix.js admin.js admin-ops.js style.css admin.css site.webmanifest robots.txt security.txt; do
             test -f "$f"
           done
 
@@ -25,7 +25,8 @@ jobs:
           set -e
           node --check site.js
           node --check checkout-fix.js
-          if test -f admin.js; then node --check admin.js; fi
+          node --check admin.js
+          node --check admin-ops.js
 
       - name: Validate Python sources when present
         shell: bash
