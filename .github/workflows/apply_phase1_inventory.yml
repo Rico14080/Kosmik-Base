@@ -1,0 +1,155 @@
+name: Kosmik Circles Phase 1 inventory patch
+
+on:
+  push:
+    branches: [development]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "!contains(github.event.head_commit.message, '[ci-skip]')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout development
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply inventory hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+          p = Path('backend/server.py')
+          s = p.read_text(encoding='utf-8')
+
+          def repl(old: str, new: str, label: str) -> None:
+              global s
+              if old not in s:
+                  raise SystemExit(f'Patch anchor missing: {label}')
+              s = s.replace(old, new, 1)
+
+          repl(
+              'MAX_MEDIA_UPLOAD = 1024 * 1024 * 1024\nAPI_VERSION = "1.14"',
+              'MAX_MEDIA_UPLOAD = 1024 * 1024 * 1024\nSTOCK_RESERVATION_TTL = 30 * 60\nAPI_VERSION = "1.15"',
+              'version constants')
+
+          repl(
+              'stock INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1',
+              'stock INTEGER NOT NULL DEFAULT 0, reserved_stock INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1',
+              'products schema')
+
+          repl(
+              'stripe_session_id TEXT, stock_applied INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL',
+              'stripe_session_id TEXT, stock_applied INTEGER NOT NULL DEFAULT 0, stock_reserved INTEGER NOT NULL DEFAULT 0, reservation_expires_at TEXT, created_at TEXT NOT NULL',
+              'orders schema')
+
+          repl(
+              '    if "stock_applied" not in cols:\n        c.execute("ALTER TABLE orders ADD COLUMN stock_applied INTEGER NOT NULL DEFAULT 0")',
+              '    if "stock_applied" not in cols:\n        c.execute("ALTER TABLE orders ADD COLUMN stock_applied INTEGER NOT NULL DEFAULT 0")\n    if "stock_reserved" not in cols:\n        c.execute("ALTER TABLE orders ADD COLUMN stock_reserved INTEGER NOT NULL DEFAULT 0")\n    if "reservation_expires_at" not in cols:\n        c.execute("ALTER TABLE orders ADD COLUMN reservation_expires_at TEXT")\n    product_cols = {r[1] for r in c.execute("PRAGMA table_info(products)").fetchall()}\n    if "reserved_stock" not in product_cols:\n        c.execute("ALTER TABLE products ADD COLUMN reserved_stock INTEGER NOT NULL DEFAULT 0")',
+              'migration columns')
+
+          repl(
+              'c.execute("INSERT INTO products(name,meta,description,price_cents,image,alt,stock,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (p["name"], p["meta"], p["description"], price_cents(p["price"]), p["image"], p["alt"], 0, 1, stamp, stamp))',
+              'c.execute("INSERT INTO products(name,meta,description,price_cents,image,alt,stock,reserved_stock,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (p["name"], p["meta"], p["description"], price_cents(p["price"]), p["image"], p["alt"], 0, 0, 1, stamp, stamp))',
+              'seed products')
+
+          repl(
+              'SELECT id,name,stock,created_at FROM products',
+              'SELECT id,name,stock,reserved_stock,created_at FROM products',
+              'product inventory select')
+
+          repl(
+              '        stock = max(0, stock)',
+              '        stock = max(0, stock)\n        reserved = int(old["reserved_stock"] if old else 0)\n        if stock > 0 and stock < reserved:\n            stock = reserved',
+              'preserve reserved stock')
+
+          insert_before = 'def apply_paid_order(c: sqlite3.Connection, order_id: str, session_id: str = "") -> bool:\n'
+          if insert_before not in s:
+              raise SystemExit('Patch anchor missing: reservation helpers')
+          helpers = '''def release_expired_reservations(c: sqlite3.Connection) -> int:\n    current = now()\n    rows = c.execute("SELECT id,items_json FROM orders WHERE stock_reserved=1 AND status='NEW' AND reservation_expires_at IS NOT NULL AND reservation_expires_at<?", (current,)).fetchall()\n    released = 0\n    for row in rows:\n        for item in json.loads(row["items_json"]):\n            c.execute("UPDATE products SET reserved_stock=MAX(0,reserved_stock-?),updated_at=? WHERE id=?", (int(item["quantity"]), now(), item["productId"]))\n        c.execute("UPDATE orders SET stock_reserved=0,reservation_expires_at=NULL,status='CANCELLED',updated_at=? WHERE id=? AND stock_reserved=1", (now(), row["id"]))\n        released += 1\n    return released\n\ndef reserve_order_stock(c: sqlite3.Connection, items: list[dict]) -> None:\n    c.execute("BEGIN IMMEDIATE")\n    release_expired_reservations(c)\n    for item in items:\n        qty = int(item["quantity"])\n        row = c.execute("SELECT stock,reserved_stock FROM products WHERE id=?", (item["productId"],)).fetchone()\n        if row is None:\n            raise ValueError(f"Product unavailable: {item['name']}")\n        if row["stock"] <= 0:\n            continue\n        available = row["stock"] - row["reserved_stock"]\n        if available < qty:\n            raise ValueError(f"Insufficient stock: {item['name']}")\n        changed = c.execute("UPDATE products SET reserved_stock=reserved_stock+?,updated_at=? WHERE id=? AND stock>0 AND stock-reserved_stock>=?", (qty, now(), item["productId"], qty)).rowcount\n        if changed != 1:\n            raise ValueError(f"Insufficient stock: {item['name']}")\n\ndef reservation_expiry() -> str:\n    return datetime.fromtimestamp(time.time() + STOCK_RESERVATION_TTL, tz=timezone.utc).isoformat()\n\ndef release_order_reservation(c: sqlite3.Connection, order_id: str, status: str = "CANCELLED") -> bool:\n    row = c.execute("SELECT items_json,stock_reserved FROM orders WHERE id=?", (order_id,)).fetchone()\n    if not row or not row["stock_reserved"]:\n        return False\n    for item in json.loads(row["items_json"]):\n        c.execute("UPDATE products SET reserved_stock=MAX(0,reserved_stock-?),updated_at=? WHERE id=?", (int(item["quantity"]), now(), item["productId"]))\n    c.execute("UPDATE orders SET stock_reserved=0,reservation_expires_at=NULL,status=?,updated_at=? WHERE id=?", (status, now(), order_id))\n    return True\n\n'''
+          s = s.replace(insert_before, helpers + insert_before, 1)
+
+          start = s.index(insert_before)
+          end = s.index('\n\nclass Handler', start)
+          new_apply = '''def apply_paid_order(c: sqlite3.Connection, order_id: str, session_id: str = "") -> bool:\n    row = c.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()\n    if not row:\n        return False\n    if row["stock_applied"]:\n        c.execute("UPDATE orders SET status='PAID',payment_status='PAID',stripe_session_id=COALESCE(?,stripe_session_id),updated_at=? WHERE id=?", (session_id or None, now(), order_id))\n        return True\n    if not row["stock_reserved"]:\n        return False\n    if row["reservation_expires_at"] and row["reservation_expires_at"] < now():\n        return False\n    items = json.loads(row["items_json"])\n    try:\n        c.execute("SAVEPOINT finalize_payment")\n        for item in items:\n            qty = int(item["quantity"])\n            product = c.execute("SELECT stock,reserved_stock FROM products WHERE id=?", (item["productId"],)).fetchone()\n            if product is None:\n                raise RuntimeError("Product missing during payment finalization")\n            if product["stock"] <= 0:\n                continue\n            changed = c.execute("UPDATE products SET stock=stock-?,reserved_stock=MAX(0,reserved_stock-?),updated_at=? WHERE id=? AND stock>=? AND reserved_stock>=?", (qty, qty, now(), item["productId"], qty, qty)).rowcount\n            if changed != 1:\n                raise RuntimeError("Reserved stock could not be finalized")\n        c.execute("UPDATE orders SET status='PAID',payment_status='PAID',stripe_session_id=COALESCE(?,stripe_session_id),stock_applied=1,stock_reserved=0,reservation_expires_at=NULL,updated_at=? WHERE id=?", (session_id or None, now(), order_id))\n        c.execute("RELEASE SAVEPOINT finalize_payment")\n        return True\n    except Exception:\n        c.execute("ROLLBACK TO SAVEPOINT finalize_payment")\n        c.execute("RELEASE SAVEPOINT finalize_payment")\n        return False\n'''
+          s = s[:start] + new_apply + s[end:]
+
+          repl(
+              'SELECT id,name,meta,description,price_cents,image,alt,stock,active FROM products',
+              'SELECT id,name,meta,description,price_cents,image,alt,stock,reserved_stock,active FROM products',
+              'public product inventory output')
+
+          repl(
+              'data["shop"] = [{**p, "price": f"€ {p[\'price_cents\']/100:.2f}", "stock": p["stock"]} for p in products]',
+              'data["shop"] = [{**p, "price": f"€ {p[\'price_cents\']/100:.2f}", "stock": p["stock"], "reservedStock": p["reserved_stock"], "availableStock": (p["stock"] - p["reserved_stock"]) if p["stock"] > 0 else None} for p in products]',
+              'public inventory fields')
+
+          repl(
+              '                if event.get("type") == "checkout.session.completed" and obj.get("payment_status") == "paid":\n                    order_id = obj.get("metadata", {}).get("order_id", "")\n                    c = db(); applied = apply_paid_order(c, order_id, obj.get("id", "")); c.commit(); c.close()\n                    if order_id and applied:',
+              '                order_id = obj.get("metadata", {}).get("order_id", "")\n                if event.get("type") == "checkout.session.expired" and order_id:\n                    c = db(); release_order_reservation(c, order_id); c.commit(); c.close()\n                    return send(self, 200, {"received": True})\n                if event.get("type") == "checkout.session.completed" and obj.get("payment_status") == "paid":\n                    c = db(); applied = apply_paid_order(c, order_id, obj.get("id", "")); c.commit(); c.close()\n                    if not applied:\n                        return send(self, 500, {"error": "Payment received but stock could not be finalized."})\n                    if order_id and applied:',
+              'Stripe reservation events')
+
+          repl(
+              '                    if not row: return send(self, 400, {"error": f"Product unavailable: {name}"})\n                    if row["stock"] > 0 and qty > row["stock"]: return send(self, 409, {"error": f"Insufficient stock: {name}"})\n                    total += row["price_cents"] * qty',
+              '                    if not row: return send(self, 400, {"error": f"Product unavailable: {name}"})\n                    total += row["price_cents"] * qty',
+              'checkout validation')
+
+          repl(
+              '                oid = "KC-" + datetime.now(timezone.utc).strftime("%Y%m%d") + "-" + secrets.token_hex(3).upper()\n                cur = c.cursor(); cur.execute("INSERT INTO customers(name,email,phone,address,city,postcode,country,created_at) VALUES(?,?,?,?,?,?,?,?)", (str(customer.get("name", ""))[:160], email, str(customer.get("phone", ""))[:60], str(customer.get("address", ""))[:250], str(customer.get("city", ""))[:120], str(customer.get("postcode", ""))[:20], str(customer.get("country", ""))[:80], now())); cid = cur.lastrowid\n                cur.execute("INSERT INTO orders(id,customer_id,email,total_cents,status,payment_status,shipping_status,items_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", (oid,cid,email,total,"NEW","UNPAID","UNFULFILLED",json.dumps(clean),now(),now())); c.commit()\n            finally:\n                c.close()\n            try:',
+              '                oid = "KC-" + datetime.now(timezone.utc).strftime("%Y%m%d") + "-" + secrets.token_hex(3).upper()\n                reserve_order_stock(c, clean)\n                expiry = reservation_expiry()\n                cur = c.cursor(); cur.execute("INSERT INTO customers(name,email,phone,address,city,postcode,country,created_at) VALUES(?,?,?,?,?,?,?,?)", (str(customer.get("name", ""))[:160], email, str(customer.get("phone", ""))[:60], str(customer.get("address", ""))[:250], str(customer.get("city", ""))[:120], str(customer.get("postcode", ""))[:20], str(customer.get("country", ""))[:80], now())); cid = cur.lastrowid\n                cur.execute("INSERT INTO orders(id,customer_id,email,total_cents,status,payment_status,shipping_status,items_json,stock_reserved,reservation_expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (oid,cid,email,total,"NEW","UNPAID","UNFULFILLED",json.dumps(clean),1,expiry,now(),now())); c.commit()\n            except ValueError as exc:\n                c.rollback()\n                c.close()\n                return send(self, 409, {"error": str(exc)})\n            except Exception:\n                c.rollback()\n                c.close()\n                return send(self, 500, {"error": "Unable to create order"})\n            finally:\n                try: c.close()\n                except Exception: pass\n            try:',
+              'checkout reservation transaction')
+
+          repl(
+              '            except RuntimeError as exc:\n                return send(self, 503, {"error": str(exc), "orderId": oid})',
+              '            except RuntimeError as exc:\n                c = db(); release_order_reservation(c, oid); c.commit(); c.close()\n                return send(self, 503, {"error": str(exc), "orderId": oid})',
+              'release on stripe failure')
+
+          repl(
+              '            return send(self, 201, {"ok": True, "orderId": oid, "totalCents": total, "paymentRequired": False, "message": "Payment provider is not configured yet."})',
+              '            c = db(); release_order_reservation(c, oid); c.commit(); c.close()\n            return send(self, 201, {"ok": True, "orderId": oid, "totalCents": total, "paymentRequired": False, "message": "Payment provider is not configured yet."})',
+              'release when stripe disabled')
+
+          repl(
+              '                c = db(); c.execute("UPDATE orders SET status=?,updated_at=? WHERE id=?", (status, now(), oid))\n                c.commit(); c.close(); return send(self, 200, {"ok": True})',
+              '                c = db(); row = c.execute("SELECT payment_status FROM orders WHERE id=?", (oid,)).fetchone()\n                if not row:\n                    c.close(); return send(self, 404, {"error": "Order not found"})\n                if row["payment_status"] != "PAID" and status in {"PROCESSING", "SHIPPED", "DELIVERED", "REFUNDED"}:\n                    c.close(); return send(self, 409, {"error": "Unpaid orders can only remain NEW or be CANCELLED."})\n                if status in {"CANCELLED", "REFUNDED"}:\n                    release_order_reservation(c, oid, status)\n                c.execute("UPDATE orders SET status=?,updated_at=? WHERE id=?", (status, now(), oid))\n                c.commit(); c.close(); return send(self, 200, {"ok": True})',
+              'admin order state')
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Verify patched backend
+        run: |
+          python -m py_compile backend/server.py
+          python - <<'PY'
+          import importlib.util, tempfile, threading
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('srv','backend/server.py')
+          srv=importlib.util.module_from_spec(spec); spec.loader.exec_module(srv)
+          with tempfile.TemporaryDirectory() as td:
+              root=Path(td); srv.DATA=root/'data'; srv.UPLOADS=root/'uploads'; srv.MEDIA_DIR=root/'media'; srv.DB=srv.DATA/'kosmik.db'; srv.init_db()
+              c=srv.db(); c.execute('UPDATE products SET stock=5,reserved_stock=0 WHERE id=1'); c.commit(); c.close(); results=[]
+              def worker():
+                  c=srv.db()
+                  try: srv.reserve_order_stock(c,[{'productId':1,'name':'Moon Phase Tee','quantity':3,'priceCents':4800}]); c.commit(); results.append(True)
+                  except Exception: c.rollback(); results.append(False)
+                  finally: c.close()
+              ts=[threading.Thread(target=worker),threading.Thread(target=worker)]; [t.start() for t in ts]; [t.join() for t in ts]
+              assert sorted(results)==[False,True]
+              c=srv.db(); row=c.execute('SELECT stock,reserved_stock FROM products WHERE id=1').fetchone(); assert row['stock']==5 and row['reserved_stock']==3
+          print('PHASE 1 INVENTORY CI TEST PASS')
+          PY
+
+      - name: Commit patched backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/apply_phase1_inventory.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/server.py .github/workflows/apply_phase1_inventory.yml
+          git commit -m "feat: harden checkout inventory reservation [ci-skip]"
+          git push origin HEAD:development
