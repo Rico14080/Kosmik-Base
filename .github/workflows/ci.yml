@@ -52,8 +52,12 @@ jobs:
         shell: bash
         run: |
           set -e
-          if grep -nE '<style|style="|<script(?![^>]+src=)' admin.html; then
-            echo 'Inline Admin style/script detected.'
+          if grep -nE '<style|style="' admin.html; then
+            echo 'Inline Admin style detected.'
+            exit 1
+          fi
+          if grep -n '<script' admin.html | grep -v 'src='; then
+            echo 'Inline Admin script detected.'
             exit 1
           fi
           grep -q 'admin.css' admin.html
