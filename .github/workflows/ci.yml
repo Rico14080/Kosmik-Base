@@ -72,7 +72,7 @@ jobs:
         run: |
           set -e
           python -m pip install --disable-pip-version-check playwright
-          python -m playwright install --with-deps chromium
+          python -m playwright install chromium
           python backend/server.py >/tmp/kosmik-server.log 2>&1 &
           SERVER_PID=$!
           cleanup() {
