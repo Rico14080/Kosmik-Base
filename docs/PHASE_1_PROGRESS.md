@@ -6,6 +6,7 @@ Branch di lavoro: `development`
 ## Completed
 
 - Admin control-room navigation redesign and usability layer.
+- Admin operations controller restored for orders and incoming messages without reintroducing inline styling.
 - Checkout inventory reservations with non-destructive SQLite migrations.
 - Atomic stock reservation for finite inventory.
 - Reservation expiry/cancellation release.
@@ -17,19 +18,17 @@ Branch di lavoro: `development`
 
 ## Validation
 
-- `python -m py_compile backend/server.py` — PASS locally.
-- `node --check site.js` — PASS locally.
-- `node --check admin.js` — PASS locally.
-- `node --check checkout-fix.js` — PASS locally.
-- Inventory concurrency test — PASS locally.
+- GitHub CI run #60 — PASS: frontend file inventory, JavaScript syntax, Python compilation, Phase 1 checkout regression suite, and secret/database guard.
+- Phase 1 checkout suite — PASS: concurrent reservation, provider-confirmed stock deduction, and expired reservation release.
+- Admin operations controller — included in CI JavaScript syntax validation.
 - Backend API smoke tests from the local staging copy — PASS for health/content and protected Admin endpoints where browser navigation was not required.
-- GitHub CI on the inventory commit completed successfully.
+- Browser UI navigation could not be validated in this environment because browser navigation was blocked by the execution environment.
 
-## Remaining Phase 1 work
+## Remaining Phase 1 / production-gate items
 
-- Finish Admin/CSP hardening and remove remaining inline style/script exceptions.
-- Complete frontend page-level functional checks.
-- Verify Stripe webhook behaviour against live/test provider configuration.
+- Finish CSP hardening after a repository-wide inline-style/script audit; the backend currently keeps `unsafe-inline` exceptions for compatibility.
+- Complete real browser page-level checks on the deployed site.
+- Verify Stripe webhook behaviour against the real Stripe test configuration.
 - Review Admin session storage and CSRF/session strategy before production.
 
 ## Important
