@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -24,7 +25,14 @@ def main() -> None:
     failures: list[str] = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        executable = next(
+            (shutil.which(name) for name in ("google-chrome", "chromium", "chromium-browser") if shutil.which(name)),
+            None,
+        )
+        launch_options = {"headless": True}
+        if executable:
+            launch_options["executable_path"] = executable
+        browser = p.chromium.launch(**launch_options)
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page_errors: list[str] = []
         page.on("pageerror", lambda exc: page_errors.append(str(exc)))
