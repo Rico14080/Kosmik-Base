@@ -15,7 +15,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html admin.html 404.html site.js checkout-fix.js admin.js admin-ops.js style.css admin.css site.webmanifest robots.txt security.txt; do
+          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html admin.html 404.html site.js checkout-fix.js site-fixes.js admin.js admin-ops.js style.css admin.css site.webmanifest robots.txt security.txt; do
             test -f "$f"
           done
 
@@ -25,6 +25,7 @@ jobs:
           set -e
           node --check site.js
           node --check checkout-fix.js
+          node --check site-fixes.js
           node --check admin.js
           node --check admin-ops.js
 
@@ -46,6 +47,25 @@ jobs:
         run: |
           set -e
           python backend/tests/phase1_checkout_test.py
+
+      - name: Validate Admin/CSP resource wiring
+        shell: bash
+        run: |
+          set -e
+          if grep -nE '<style|style="|<script(?![^>]+src=)' admin.html; then
+            echo 'Inline Admin style/script detected.'
+            exit 1
+          fi
+          grep -q 'admin.css' admin.html
+          grep -q 'admin.js' admin.html
+          grep -q 'admin-ops.js' admin.html
+          grep -q 'site-fixes.js' index.html
+          grep -q 'site-fixes.js' shop.html
+          grep -q 'site-fixes.js' cart.html
+          grep -q 'site-fixes.js' gallery.html
+          grep -q 'site-fixes.js' live.html
+          grep -q 'site-fixes.js' contact.html
+          grep -q 'site-fixes.js' us.html
 
       - name: Block committed secrets
         shell: bash
