@@ -1,44 +1,61 @@
 # Kosmik Circles — Phase 1 Progress
 
-Data: 2026-09-05
+Data: 2026-09-09
 Branch di lavoro: `development`
 
-## Completed
+## Completed / verified
 
 - Admin control-room navigation redesign and usability layer.
 - Admin operations controller restored for orders and incoming messages without reintroducing inline styling.
 - Checkout inventory reservations with non-destructive SQLite migrations.
-- Atomic stock reservation for finite inventory.
-- Reservation expiry/cancellation release.
+- Atomic reservation for finite inventory and reservation expiry/cancellation release.
 - Provider-confirmed payment finalization with idempotent stock application.
 - Manual Admin `PAID` status blocked.
 - Cart checkout UX hardened against duplicate submit.
 - Cart cleared after provider-confirmed successful payment; cancelled payments keep the cart available.
-- Site runtime restored after an intermediate branch-edit error.
-- Global frontend regression guard added for Bag label/count separation and no-ticket event links.
-- Contact form honeypot converted from inline styling to semantic `hidden` markup.
-- CI now validates the global frontend guard, Admin external resources, JS syntax, Python compilation, checkout regression tests and secret/database guards.
+- Global frontend regression guard for Bag label/count separation and no-ticket event links.
+- Contact form honeypot converted to semantic hidden markup.
+- CI validates frontend inventory, JavaScript syntax, Python compilation, checkout regression tests, Admin resource wiring, browser smoke and secret/database guards.
+- A production inventory regression suite was added to enforce the explicit production contract for stock and quantities.
+- A restore branch `backup/pre-production-audit-20260909` was created before the new production-gate work.
+- `.env.example` and `docs/PRODUCTION_READINESS.md` were added.
 
-## Validation
+## Real CI validation
 
-- GitHub CI run #85 — PASS for frontend file inventory, JavaScript syntax, Python compilation, Phase 1 checkout regression suite, Admin/CSP resource wiring and secret/database guard.
-- Phase 1 checkout suite — PASS: concurrent reservation, provider-confirmed stock deduction, and expired reservation release.
-- Admin operations controller — validated by CI syntax check and loaded as a dedicated external script.
-- Backend API smoke tests from the local staging copy — PASS for health/content and protected Admin endpoints where browser navigation was not required.
-- Browser UI navigation remains to be verified on the real served/deployed environment.
+### PASS
 
-## Remaining Phase 1 / production-gate items
+- Frontend file inventory.
+- JavaScript syntax.
+- Python compilation.
+- Existing Phase 1 checkout regression suite.
+- Admin/CSP resource wiring.
+- Browser smoke tests against a live GitHub Actions-hosted local backend.
+- Secret/database tracking guard.
 
-- Complete repository-wide CSP tightening: the backend still keeps `unsafe-inline` exceptions for compatibility, so the policy is hardened but not yet strict.
-- Complete real browser page-level checks on the served site.
-- Verify Stripe webhook behaviour against the real Stripe test configuration.
-- Review Admin session storage and CSRF/session strategy before production.
-- Finish Matrix visibility/performance optimization without changing the visual effect.
+### FAIL — intentional production gate
 
-## Visualization during development
+The new production inventory guard fails because the current backend still treats `stock=0` as available in `reserve_order_stock`.
 
-Run the backend from the project root with `python backend/server.py`, then open `http://127.0.0.1:8080/index.html` in the browser. Do not use `file:///...` because the site expects the backend API. Admin is available at `http://127.0.0.1:8080/admin.html`.
+The CI log reproduced:
+
+`AssertionError: Reservation unexpectedly succeeded`
+
+The failure is useful and must be fixed in backend logic. The test must not be removed or weakened.
+
+The same production contract requires zero and negative quantities to be rejected rather than silently normalized to `1`.
+
+## Remaining production-gate work
+
+1. Fix backend stock-zero semantics.
+2. Reject zero/negative/malformed quantities server-side.
+3. Add/verify price-change and product-removal checkout races.
+4. Complete strict CSP work without breaking runtime behaviour.
+5. Improve Admin session/cookie and CSRF strategy.
+6. Finish Matrix pause/cleanup/performance lifecycle.
+7. Run full end-to-end checkout tests against a real staging deployment.
+8. Verify Stripe test-mode webhook behaviour with real external configuration.
+9. Complete deployment, monitoring, backup and rollback documentation.
 
 ## Important
 
-`main` remains the stable branch. Phase 1 changes are intentionally kept on `development` until final review and merge.
+`main` remains untouched by this work. Do not promote the branch while the production inventory guard is red.
