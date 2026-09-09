@@ -21,6 +21,12 @@ Phase 1 code gate is green. Phase 2 starts from the verified `development` head 
 - **2.4 API hardening:** body/upload limits, MIME/signature validation and path containment are present; malformed-input and safe-error testing remains open.
 - **2.5–2.8:** require real staging/external verification and are not considered complete from source inspection.
 
+## Functional progress — 2026-09-09
+
+- Extended the automated browser smoke test to verify the public **SHOP → CART** path.
+- The test now confirms product cards and the Add to cart control render, the cart counter changes after adding an item, the cart page initializes, and the order form contains the expected customer fields and submit control.
+- The test intentionally stops before creating an order because CI has no sellable production inventory and no payment provider configured. Real checkout/payment verification remains a staging task.
+
 Detailed findings are recorded in `docs/PHASE_2_SECURITY_AUDIT.md`.
 
 ## Exit rule
