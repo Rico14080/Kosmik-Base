@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          files=(backend/server.py backend/backup.py backend/seed_gallery_demo.py backend/seed_temp_image_slots.py backend/tests/smoke_test.py backend/tests/phase1_checkout_test.py backend/tests/production_inventory_guard_test.py backend/tests/checkout_api_integration_test.py backend/tests/browser_smoke.py check_image_slots.py)
+          files=(backend/server.py backend/backup.py backend/seed_gallery_demo.py backend/seed_temp_image_slots.py backend/tests/smoke_test.py backend/tests/phase1_checkout_test.py backend/tests/production_inventory_guard_test.py backend/tests/checkout_api_integration_test.py backend/tests/security_http_regression_test.py backend/tests/browser_smoke.py check_image_slots.py)
           present=()
           for f in "${files[@]}"; do
             if test -f "$f"; then present+=("$f"); fi
@@ -59,6 +59,12 @@ jobs:
         run: |
           set -e
           python backend/tests/checkout_api_integration_test.py
+
+      - name: Run HTTP security regression tests
+        shell: bash
+        run: |
+          set -e
+          python backend/tests/security_http_regression_test.py
 
       - name: Validate Admin/CSP resource wiring
         shell: bash
