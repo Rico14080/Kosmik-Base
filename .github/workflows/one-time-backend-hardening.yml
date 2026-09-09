@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   harden:
-    if: ${{ hashFiles('backend/.apply-production-hardening') != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout development
@@ -18,7 +17,18 @@ jobs:
           ref: development
           fetch-depth: 0
 
+      - name: Check whether hardening is requested
+        id: requested
+        shell: bash
+        run: |
+          if test -f backend/.apply-production-hardening; then
+            echo "apply=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "apply=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Apply audited backend invariants
+        if: steps.requested.outputs.apply == 'true'
         shell: python
         run: |
           from pathlib import Path
@@ -64,16 +74,16 @@ jobs:
           s = s.replace(old, new, 1)
 
           p.write_text(s, encoding='utf-8')
-
-          marker = Path('backend/.apply-production-hardening')
-          marker.unlink()
+          Path('backend/.apply-production-hardening').unlink()
 
       - name: Verify patched backend
+        if: steps.requested.outputs.apply == 'true'
         run: |
           python -m py_compile backend/server.py
           python backend/tests/production_inventory_guard_test.py
 
       - name: Commit audited hardening
+        if: steps.requested.outputs.apply == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
