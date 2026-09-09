@@ -156,6 +156,15 @@ jobs:
           fi
 
       - name: Commit audited inventory fix
-        if: ${{ hashFiles('backend/.apply-production-hardening') == '' && github.event_name == 'push' && github.ref == 'refs/heads/development' && contains(github.event.head_commit.message, 'chore: trigger inventory invariant fix') }}
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/development' && contains(github.event.head_commit.message, 'chore: trigger inventory invariant fix') }}
         shell: bash
-        run: echo 'Inventory fix was already applied by the preceding CI step.'
+        run: |
+          if git diff --quiet -- backend/server.py backend/.apply-production-hardening; then
+            echo 'No inventory fix changes remain to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/server.py backend/.apply-production-hardening
+          git commit -m 'fix: enforce zero-stock and quantity invariants'
+          git push origin HEAD:development
