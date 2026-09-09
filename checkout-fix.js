@@ -1,8 +1,11 @@
 (()=>{
 const API=(location.protocol==='http:'||location.protocol==='https:')?`${location.origin}/api`:'http://127.0.0.1:8080/api';
 const CART_KEY='kosmik-circles-cart';
+const PENDING_ORDER_KEY='kosmik_pending_order';
 const getCart=()=>{try{const v=JSON.parse(localStorage.getItem(CART_KEY)||'[]');return Array.isArray(v)?v:[]}catch{return[]}};
 const clearCart=()=>{localStorage.removeItem(CART_KEY);document.querySelectorAll('[data-cart-count], .bag-link span').forEach(e=>e.textContent='0');};
+const savePendingOrder=(orderId,statusToken)=>{sessionStorage.setItem(PENDING_ORDER_KEY,JSON.stringify({orderId:String(orderId||''),statusToken:String(statusToken||'')}));};
+const getPendingOrder=()=>{try{const value=JSON.parse(sessionStorage.getItem(PENDING_ORDER_KEY)||'null');if(value&&typeof value==='object')return value;return null;}catch{return null}};
 document.addEventListener('submit',async e=>{
   const form=e.target;
   if(!form.matches('[data-order-form]')||form.dataset.checkoutFixBound==='1')return;
@@ -16,16 +19,18 @@ document.addEventListener('submit',async e=>{
     if(!items.length)throw new Error('Your cart is empty.');
     const r=await fetch(`${API}/checkout`,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({email:String(fd.get('email')||'').trim(),customer:{name:fd.get('name'),phone:fd.get('phone'),address:fd.get('address'),city:fd.get('city'),postcode:fd.get('postcode'),country:fd.get('country')},items})});
     const d=await r.json().catch(()=>({})); if(!r.ok)throw new Error(d.error||'Checkout failed');
-    if(d.checkoutUrl){sessionStorage.setItem('kosmik_pending_order',String(d.orderId||''));window.location.href=d.checkoutUrl;return;}
+    if(d.checkoutUrl){savePendingOrder(d.orderId,d.statusToken);window.location.href=d.checkoutUrl;return;}
     if(d.orderId){clearCart();if(status)status.textContent=d.message||`Order ${d.orderId} created.`;}
   }catch(err){if(status)status.textContent=err.message||'Unable to send order.';form.dataset.submitting='0';if(submit)submit.disabled=false;}
 },true);
 const settlePayment=async()=>{
  const params=new URLSearchParams(location.search),payment=params.get('payment'),order=params.get('order');
  if(payment!=='success'||!order)return;
+ const pending=getPendingOrder();
+ if(!pending||String(pending.orderId)!==String(order)||!pending.statusToken)return;
  try{
-  const r=await fetch(`${API}/orders/status?id=${encodeURIComponent(order)}`,{headers:{Accept:'application/json'},cache:'no-store'}),d=await r.json().catch(()=>({}));
-  if(r.ok&&d.paymentStatus==='PAID'){clearCart();sessionStorage.removeItem('kosmik_pending_order');}
+  const r=await fetch(`${API}/orders/status?id=${encodeURIComponent(order)}&token=${encodeURIComponent(pending.statusToken)}`,{headers:{Accept:'application/json'},cache:'no-store'}),d=await r.json().catch(()=>({}));
+  if(r.ok&&d.paymentStatus==='PAID'){clearCart();sessionStorage.removeItem(PENDING_ORDER_KEY);}
  }catch{}
 };
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',settlePayment,{once:true});else settlePayment();
