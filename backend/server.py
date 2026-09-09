@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Kosmik Circles production-oriented local backend V1.9.
+"""Kosmik Circles production-oriented local backend V1.15.
 
 Standard-library only. SQLite for persistence, optional Stripe Checkout and SMTP.
 """
@@ -18,7 +18,7 @@ import smtplib
 import sqlite3
 import time
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from email.message import EmailMessage
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -37,10 +37,11 @@ PORT = int(os.getenv("KOSMIK_PORT", "8080"))
 ADMIN_USER = os.getenv("KOSMIK_ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.getenv("KOSMIK_ADMIN_PASSWORD", "")
 SESSION_TTL = 12 * 60 * 60
+STOCK_RESERVATION_TTL = 30 * 60
 MAX_BODY = 1_500_000
 MAX_UPLOAD = 5 * 1024 * 1024
 MAX_MEDIA_UPLOAD = 1024 * 1024 * 1024
-API_VERSION = "1.14"
+API_VERSION = "1.15"
 ORDER_STATUSES = {"NEW", "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED", "REFUNDED"}
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
@@ -201,22 +202,28 @@ def init_db() -> None:
     c = db()
     c.executescript("""
     CREATE TABLE IF NOT EXISTS site_content (id INTEGER PRIMARY KEY CHECK(id=1), content TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, meta TEXT, description TEXT, price_cents INTEGER NOT NULL DEFAULT 0, image TEXT, alt TEXT, stock INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, meta TEXT, description TEXT, price_cents INTEGER NOT NULL DEFAULT 0, image TEXT, alt TEXT, stock INTEGER NOT NULL DEFAULT 0, reserved_stock INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, iso_date TEXT, location TEXT, venue TEXT, signal TEXT, detail TEXT, action TEXT, ticket_url TEXT, past INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS gallery (id INTEGER PRIMARY KEY AUTOINCREMENT, image TEXT, alt TEXT, caption TEXT, sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS gallery_albums (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, slug TEXT UNIQUE, date TEXT, location TEXT, venue TEXT, description TEXT, cover_image TEXT, sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS gallery_media (id INTEGER PRIMARY KEY AUTOINCREMENT, album_id INTEGER NOT NULL, original_name TEXT NOT NULL, stored_name TEXT NOT NULL UNIQUE, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, FOREIGN KEY(album_id) REFERENCES gallery_albums(id) ON DELETE CASCADE);
     CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT NOT NULL, phone TEXT, address TEXT, city TEXT, postcode TEXT, country TEXT, created_at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, customer_id INTEGER, email TEXT NOT NULL, total_cents INTEGER NOT NULL, status TEXT NOT NULL, payment_status TEXT NOT NULL, shipping_status TEXT NOT NULL, items_json TEXT NOT NULL, stripe_session_id TEXT, stock_applied INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, customer_id INTEGER, email TEXT NOT NULL, total_cents INTEGER NOT NULL, status TEXT NOT NULL, payment_status TEXT NOT NULL, shipping_status TEXT NOT NULL, items_json TEXT NOT NULL, stripe_session_id TEXT, stock_applied INTEGER NOT NULL DEFAULT 0, stock_reserved INTEGER NOT NULL DEFAULT 0, reservation_expires_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
     """)
-    # Migrate older V1.3 orders table without destructive data loss.
-    cols = {r[1] for r in c.execute("PRAGMA table_info(orders)").fetchall()}
-    if "stripe_session_id" not in cols:
+    pcols = {r[1] for r in c.execute("PRAGMA table_info(products)").fetchall()}
+    if "reserved_stock" not in pcols:
+        c.execute("ALTER TABLE products ADD COLUMN reserved_stock INTEGER NOT NULL DEFAULT 0")
+    ocols = {r[1] for r in c.execute("PRAGMA table_info(orders)").fetchall()}
+    if "stripe_session_id" not in ocols:
         c.execute("ALTER TABLE orders ADD COLUMN stripe_session_id TEXT")
-    if "stock_applied" not in cols:
+    if "stock_applied" not in ocols:
         c.execute("ALTER TABLE orders ADD COLUMN stock_applied INTEGER NOT NULL DEFAULT 0")
+    if "stock_reserved" not in ocols:
+        c.execute("ALTER TABLE orders ADD COLUMN stock_reserved INTEGER NOT NULL DEFAULT 0")
+    if "reservation_expires_at" not in ocols:
+        c.execute("ALTER TABLE orders ADD COLUMN reservation_expires_at TEXT")
     row = c.execute("SELECT content FROM site_content WHERE id=1").fetchone()
     if not row:
         c.execute("INSERT INTO site_content VALUES(1,?,?)", (json.dumps(DEFAULT_CONTENT, ensure_ascii=False), now()))
@@ -224,14 +231,14 @@ def init_db() -> None:
         saved_content = json.loads(row["content"])
         legacy_schema = "siteText" not in saved_content and "visuals" not in saved_content
         merged = merge_content_defaults(saved_content)
-        # One-time migration for the original V1.8 database: preserve the built-in live archive.
         if legacy_schema and not saved_content.get("live"):
             merged["live"] = copy.deepcopy(DEFAULT_CONTENT["live"])
         c.execute("UPDATE site_content SET content=?,updated_at=? WHERE id=1", (json.dumps(merged, ensure_ascii=False), now()))
     if c.execute("SELECT COUNT(*) AS n FROM products").fetchone()["n"] == 0:
         stamp = now()
         for p in DEFAULT_CONTENT["shop"]:
-            c.execute("INSERT INTO products(name,meta,description,price_cents,image,alt,stock,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", (p["name"], p["meta"], p["description"], price_cents(p["price"]), p["image"], p["alt"], 0, 1, stamp, stamp))
+            c.execute("INSERT INTO products(name,meta,description,price_cents,image,alt,stock,reserved_stock,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (p["name"], p["meta"], p["description"], price_cents(p["price"]), p["image"], p["alt"], 0, 0, 1, stamp, stamp))
+    release_expired_reservations(c)
     c.commit()
     c.close()
 
@@ -245,7 +252,6 @@ def persist_image(value: object, prefix: str = "image") -> str:
     value = str(value or "").strip()
     m = re.match(r"^data:image/(png|jpe?g|webp|gif);base64,(.+)$", value, re.I)
     if not m:
-        # Keep an already-persisted local upload or a trusted HTTPS image URL.
         if value.startswith(("/backend/uploads/", "https://")):
             return value[:4000]
         return value[:4000]
@@ -344,7 +350,7 @@ def save_content(c: sqlite3.Connection, content: dict) -> dict:
     previous = merge_content_defaults(content_from_db(c))
     content = normalize_content_images(content)
     stamp = now()
-    existing_rows = c.execute("SELECT id,name,stock,created_at FROM products").fetchall()
+    existing_rows = c.execute("SELECT id,name,stock,reserved_stock,created_at FROM products").fetchall()
     existing_by_name = {r["name"]: r for r in existing_rows}
     active_names = set()
     c.execute("UPDATE site_content SET content=?,updated_at=? WHERE id=1", (json.dumps(content, ensure_ascii=False), stamp))
@@ -360,11 +366,14 @@ def save_content(c: sqlite3.Connection, content: dict) -> dict:
         except (TypeError, ValueError):
             stock = int(old["stock"] if old else 0)
         stock = max(0, stock)
+        reserved = int(old["reserved_stock"] or 0) if old else 0
+        if stock > 0 and stock < reserved:
+            raise ValueError(f"Stock for {name} cannot be lower than reserved quantity ({reserved}).")
         values = (str(p.get("meta", ""))[:200], str(p.get("description", ""))[:2000], price_cents(p.get("price")), str(p.get("image", ""))[:4000], str(p.get("alt", ""))[:300], stock, stamp)
         if old:
             c.execute("UPDATE products SET meta=?,description=?,price_cents=?,image=?,alt=?,stock=?,active=1,updated_at=? WHERE id=?", (*values, old["id"]))
         else:
-            c.execute("INSERT INTO products(name,meta,description,price_cents,image,alt,stock,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", (name, *values, 1, stamp))
+            c.execute("INSERT INTO products(name,meta,description,price_cents,image,alt,stock,reserved_stock,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (name, *values, 0, 1, stamp))
     for old in existing_rows:
         if old["name"] not in active_names:
             c.execute("UPDATE products SET active=0,updated_at=? WHERE id=?", (stamp, old["id"]))
@@ -379,6 +388,66 @@ def save_content(c: sqlite3.Connection, content: dict) -> dict:
     prune_unreferenced_uploads(content)
     return content
 
+
+def release_expired_reservations(c: sqlite3.Connection) -> int:
+    now_dt = datetime.now(timezone.utc)
+    rows = c.execute("SELECT id,items_json,stock_reserved,reservation_expires_at,status FROM orders WHERE stock_reserved>0 AND reservation_expires_at IS NOT NULL AND reservation_expires_at<?", (now_dt.isoformat(),)).fetchall()
+    released = 0
+    for row in rows:
+        try:
+            items = json.loads(row["items_json"])
+        except Exception:
+            items = []
+        for item in items:
+            qty = max(0, int(item.get("quantity", 0)))
+            if qty <= 0:
+                continue
+            c.execute("UPDATE products SET reserved_stock=MAX(0,reserved_stock-?),updated_at=? WHERE id=?", (qty, now(), int(item.get("productId", 0))))
+        c.execute("UPDATE orders SET stock_reserved=0,reservation_expires_at=NULL,updated_at=? WHERE id=?", (now(), row["id"]))
+        released += 1
+    return released
+
+
+def reservation_expiry() -> str:
+    return (datetime.now(timezone.utc) + timedelta(seconds=STOCK_RESERVATION_TTL)).isoformat()
+
+
+def reserve_order_stock(c: sqlite3.Connection, items: list[dict]) -> str:
+    c.execute("BEGIN IMMEDIATE")
+    release_expired_reservations(c)
+    for item in items:
+        product = c.execute("SELECT id,stock,reserved_stock FROM products WHERE id=? AND active=1", (int(item["productId"]),)).fetchone()
+        if not product:
+            raise ValueError(f"Product unavailable: {item['name']}")
+        stock = int(product["stock"])
+        reserved = int(product["reserved_stock"] or 0)
+        qty = int(item["quantity"])
+        if qty <= 0 or qty > 99:
+            raise ValueError(f"Invalid quantity: {item['name']}")
+        if stock <= 0:
+            raise ValueError(f"Product out of stock: {item['name']}")
+        if qty > max(0, stock - reserved):
+            raise RuntimeError(f"Insufficient stock: {item['name']}")
+    for item in items:
+        c.execute("UPDATE products SET reserved_stock=reserved_stock+?,updated_at=? WHERE id=?", (int(item["quantity"]), now(), int(item["productId"])))
+    return reservation_expiry()
+
+
+def release_order_reservation(c: sqlite3.Connection, order_id: str) -> bool:
+    row = c.execute("SELECT items_json,stock_reserved FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row or int(row["stock_reserved"] or 0) <= 0:
+        return False
+    try:
+        items = json.loads(row["items_json"])
+    except Exception:
+        items = []
+    for item in items:
+        qty = max(0, int(item.get("quantity", 0)))
+        if qty <= 0:
+            continue
+        c.execute("UPDATE products SET reserved_stock=MAX(0,reserved_stock-?),updated_at=? WHERE id=?", (qty, now(), int(item.get("productId", 0))))
+    c.execute("UPDATE orders SET stock_reserved=0,reservation_expires_at=NULL,updated_at=? WHERE id=?", (now(), order_id))
+    return True
 
 
 def gallery_slug(title: str, album_id: int | None = None) -> str:
@@ -576,23 +645,36 @@ def verify_stripe_signature(payload: bytes, header: str) -> bool:
 
 
 def apply_paid_order(c: sqlite3.Connection, order_id: str, session_id: str = "") -> bool:
+    release_expired_reservations(c)
     row = c.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row:
         return False
     if row["stock_applied"]:
-        c.execute("UPDATE orders SET status='PAID',payment_status='PAID',stripe_session_id=COALESCE(?,stripe_session_id),updated_at=? WHERE id=?", (session_id or None, now(), order_id))
+        c.execute("UPDATE orders SET status='PAID',payment_status='PAID',stripe_session_id=COALESCE(?,stripe_session_id),stock_reserved=0,reservation_expires_at=NULL,updated_at=? WHERE id=?", (session_id or None, now(), order_id))
         return True
     items = json.loads(row["items_json"])
-    for item in items:
-        product = c.execute("SELECT stock FROM products WHERE id=?", (item["productId"],)).fetchone()
-        if product and product["stock"] > 0:
-            qty = int(item["quantity"])
-            if product["stock"] < qty:
-                c.execute("UPDATE orders SET status='PAID',payment_status='PAID',updated_at=? WHERE id=?", (now(), order_id))
-                return False
-            c.execute("UPDATE products SET stock=stock-?,updated_at=? WHERE id=?", (qty, now(), item["productId"]))
-    c.execute("UPDATE orders SET status='PAID',payment_status='PAID',stripe_session_id=COALESCE(?,stripe_session_id),stock_applied=1,updated_at=? WHERE id=?", (session_id or None, now(), order_id))
-    return True
+    savepoint = f"paid_{secrets.token_hex(4)}"
+    c.execute(f"SAVEPOINT {savepoint}")
+    try:
+        for item in items:
+            product = c.execute("SELECT stock,reserved_stock FROM products WHERE id=?", (item["productId"],)).fetchone()
+            if product and product["stock"] > 0:
+                qty = int(item["quantity"])
+                reserved = int(product["reserved_stock"] or 0)
+                if row["stock_reserved"] >= qty and reserved >= qty:
+                    c.execute("UPDATE products SET stock=stock-?,reserved_stock=MAX(0,reserved_stock-?),updated_at=? WHERE id=?", (qty, qty, now(), item["productId"]))
+                else:
+                    available = int(product["stock"]) - reserved
+                    if available < qty:
+                        raise RuntimeError("Insufficient stock at payment confirmation")
+                    c.execute("UPDATE products SET stock=stock-?,updated_at=? WHERE id=?", (qty, now(), item["productId"]))
+        c.execute("UPDATE orders SET status='PAID',payment_status='PAID',stripe_session_id=COALESCE(?,stripe_session_id),stock_applied=1,stock_reserved=0,reservation_expires_at=NULL,updated_at=? WHERE id=?", (session_id or None, now(), order_id))
+        c.execute(f"RELEASE SAVEPOINT {savepoint}")
+        return True
+    except Exception:
+        c.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        c.execute(f"RELEASE SAVEPOINT {savepoint}")
+        return False
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -636,6 +718,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.blocked_static(path):
             return send(self, 404, {"error": "Not found"})
         if path == "/api/health":
+            c = db(); release_expired_reservations(c); c.commit(); c.close()
             return send(self, 200, {"ok": True, "service": "kosmik-circles", "version": API_VERSION, "time": now(), "stripeConfigured": bool(STRIPE_SECRET_KEY), "emailConfigured": bool(SMTP_HOST and SMTP_FROM)})
         if path == "/api/config":
             return send(self, 200, {"paymentProvider": "stripe" if STRIPE_SECRET_KEY else None, "paymentsEnabled": bool(STRIPE_SECRET_KEY and PUBLIC_BASE_URL.startswith("https://"))})
@@ -677,13 +760,13 @@ class Handler(SimpleHTTPRequestHandler):
                     self.wfile.write(chunk)
             return
         if path == "/api/content":
-            c = db()
+            c = db(); release_expired_reservations(c); c.commit()
             data = merge_content_defaults(content_from_db(c))
-            products = [dict(r) for r in c.execute("SELECT id,name,meta,description,price_cents,image,alt,stock,active FROM products WHERE active=1 ORDER BY id")]
+            products = [dict(r) for r in c.execute("SELECT id,name,meta,description,price_cents,image,alt,stock,reserved_stock,active FROM products WHERE active=1 ORDER BY id")]
             events = [dict(r) for r in c.execute("SELECT id,date,iso_date,location,venue,signal,detail,action,ticket_url,past FROM events ORDER BY iso_date,id")]
             gallery = [dict(r) for r in c.execute("SELECT id,image,alt,caption,sort_order FROM gallery WHERE active=1 ORDER BY sort_order,id")]
             c.close()
-            data["shop"] = [{**p, "price": f"€ {p['price_cents']/100:.2f}", "stock": p["stock"]} for p in products] or data.get("shop", [])
+            data["shop"] = [{**p, "price": f"€ {p['price_cents']/100:.2f}", "stock": p["stock"], "reservedStock": p["reserved_stock"], "availableStock": (None if p["stock"] == 0 else max(0, p["stock"] - p["reserved_stock"]))} for p in products] or data.get("shop", [])
             data["live"] = events or data.get("live", [])
             data["gallery"] = gallery or data.get("gallery", [])
             return send(self, 200, {"content": data})
@@ -692,22 +775,8 @@ class Handler(SimpleHTTPRequestHandler):
             c=db();albums=list_gallery_albums(c,public=False);c.close();return send(self,200,{"albums":albums})
         if path == "/api/admin/orders":
             if not session_ok(self): return send(self, 401, {"error": "Unauthorized"})
-            c = db(); rows = [dict(r) for r in c.execute("SELECT o.*, c.name,c.phone,c.address,c.city,c.postcode,c.country FROM orders o LEFT JOIN customers c ON c.id=o.customer_id ORDER BY o.created_at DESC")]; c.close()
+            c = db(); release_expired_reservations(c); c.commit(); rows = [dict(r) for r in c.execute("SELECT o.*, c.name,c.phone,c.address,c.city,c.postcode,c.country FROM orders o LEFT JOIN customers c ON c.id=o.customer_id ORDER BY o.created_at DESC")]; c.close()
             return send(self, 200, {"orders": rows})
-        # Serve uploaded images explicitly so /backend/uploads/* works reliably across local and production servers.
-        if path.startswith("/backend/uploads/"):
-            target = _safe_upload_path(path)
-            if target is None or not target.is_file():
-                return send(self, 404, {"error": "Image not found"})
-            data = target.read_bytes()
-            mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}.get(target.suffix.lower(), "application/octet-stream")
-            self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
-            self.end_headers()
-            self.wfile.write(data)
-            return
         if path == "/api/admin/messages":
             if not session_ok(self): return send(self, 401, {"error": "Unauthorized"})
             c = db(); rows = [dict(r) for r in c.execute("SELECT * FROM messages ORDER BY created_at DESC")]; c.close()
@@ -721,6 +790,19 @@ class Handler(SimpleHTTPRequestHandler):
                 "products": c.execute("SELECT COUNT(*) n FROM products WHERE active=1").fetchone()["n"],
                 "revenueCents": c.execute("SELECT COALESCE(SUM(total_cents),0) n FROM orders WHERE payment_status='PAID'").fetchone()["n"],
             }; c.close(); return send(self, 200, {"stats": stats})
+        if path.startswith("/backend/uploads/"):
+            target = _safe_upload_path(path)
+            if target is None or not target.is_file():
+                return send(self, 404, {"error": "Image not found"})
+            data = target.read_bytes()
+            mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}.get(target.suffix.lower(), "application/octet-stream")
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+            self.end_headers()
+            self.wfile.write(data)
+            return
         return super().do_GET()
 
     def read_raw_upload(self) -> tuple[bytes, str]:
@@ -771,19 +853,24 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 event = json.loads(payload)
                 obj = event.get("data", {}).get("object", {})
-                if event.get("type") == "checkout.session.completed" and obj.get("payment_status") == "paid":
+                event_type = event.get("type", "")
+                if event_type == "checkout.session.completed" and obj.get("payment_status") == "paid":
                     order_id = obj.get("metadata", {}).get("order_id", "")
-                    c = db(); applied = apply_paid_order(c, order_id, obj.get("id", "")); c.commit(); c.close()
+                    c = db(); applied = apply_paid_order(c, order_id, obj.get("id", "")); c.commit();
+                    paid = c.execute("SELECT email,total_cents FROM orders WHERE id=?", (order_id,)).fetchone() if applied else None
+                    c.close()
                     if order_id and applied:
-                        c2 = db(); paid = c2.execute("SELECT email,total_cents FROM orders WHERE id=?", (order_id,)).fetchone(); c2.close()
                         send_mail(f"Kosmik Circles — payment received {order_id}", f"Order {order_id} has been paid.\n\nTotal: € {((paid['total_cents'] if paid else 0)/100):.2f}\n", SITE_OWNER_EMAIL)
                         if paid:
                             send_mail(f"Kosmik Circles — order confirmed {order_id}", f"Your order {order_id} has been paid and confirmed.\n\nTotal: € {paid['total_cents']/100:.2f}\n\nThank you for your order.\n", paid["email"])
+                elif event_type == "checkout.session.expired":
+                    order_id = obj.get("metadata", {}).get("order_id", "")
+                    if order_id:
+                        c = db(); release_order_reservation(c, order_id); c.commit(); c.close()
                 return send(self, 200, {"received": True})
             except Exception as exc:
                 print("Webhook error:", exc)
                 return send(self, 500, {"error": "Webhook processing failed"})
-        # Raw image upload carries binary data, so handle it before JSON parsing.
         if path == "/api/admin/upload":
             if not session_ok(self):
                 return send(self, 401, {"error": "Unauthorized"})
@@ -796,12 +883,9 @@ class Handler(SimpleHTTPRequestHandler):
             name = f"{prefix}-{secrets.token_hex(8)}.{ext}"
             (UPLOADS / name).write_bytes(raw)
             return send(self, 201, {"ok": True, "image": f"/backend/uploads/{name}"})
-
-        # Logout carries no JSON body, so handle it before parsing the request body.
         if path == "/api/admin/logout":
             token = self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
             c = db(); c.execute("DELETE FROM sessions WHERE token=?", (token,)); c.commit(); c.close(); return send(self, 200, {"ok": True})
-
         if path == "/api/admin/gallery/media/upload":
             if not session_ok(self):return send(self,401,{"error":"Unauthorized"})
             qs=parse_qs(urlparse(self.path).query);album_id=int(qs.get('album_id',['0'])[0] or 0);c=db();album=c.execute('SELECT id FROM gallery_albums WHERE id=?',(album_id,)).fetchone()
@@ -812,12 +896,10 @@ class Handler(SimpleHTTPRequestHandler):
                 c.execute('INSERT INTO gallery_media(album_id,original_name,stored_name,media_type,mime_type,size_bytes,sort_order,active,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(album_id,original,stored,mime,mime,size,sort,1,stamp));mid=c.execute('SELECT last_insert_rowid()').fetchone()[0];c.commit();c.close();return send(self,201,{"ok":True,"media": {"id":int(mid),"mediaUrl":f"/backend/media/{int(mid)}","downloadUrl":f"/api/gallery/media/{int(mid)}/download","originalName":original,"mediaType":mime,"sizeBytes":size}})
             except Exception as exc:
                 c.close();return send(self,400,{"error":str(exc)})
-
         try:
             data = self.read_json()
         except Exception:
             return send(self, 400, {"error": "Invalid JSON or payload too large"})
-
         if path == "/api/admin/login":
             if rate_limited("login", self.client_address[0], 8, 300):
                 return send(self, 429, {"error": "Too many login attempts. Try again later."})
@@ -827,7 +909,6 @@ class Handler(SimpleHTTPRequestHandler):
             token = secrets.token_urlsafe(36); expires = int(time.time()) + SESSION_TTL
             c = db(); c.execute("DELETE FROM sessions WHERE expires_at<?", (int(time.time()),)); c.execute("INSERT INTO sessions VALUES(?,?)", (token, expires)); c.commit(); c.close()
             return send(self, 200, {"token": token, "expiresAt": expires})
-
         if path == "/api/messages":
             if rate_limited("message", self.client_address[0], 5, 600):
                 return send(self, 429, {"error": "Too many messages. Try again later."})
@@ -837,41 +918,58 @@ class Handler(SimpleHTTPRequestHandler):
             c = db(); mid = "MSG-" + secrets.token_hex(6).upper(); c.execute("INSERT INTO messages VALUES(?,?,?,?,?,?)", (mid,name,email,message,"new",now())); c.commit(); c.close()
             send_mail(f"Kosmik Circles — new message from {name}", f"From: {name}\nEmail: {email}\n\n{message}\n", SITE_OWNER_EMAIL)
             return send(self, 201, {"ok": True, "id": mid})
-
         if path == "/api/checkout":
             if rate_limited("checkout", self.client_address[0], 20, 600):
                 return send(self, 429, {"error": "Too many checkout attempts. Try again later."})
             email = str(data.get("email", "")).strip()[:200]; items = data.get("items", []); customer = data.get("customer", {}) or {}
             if not valid_email(email) or not isinstance(items, list) or not items or len(items) > 50: return send(self, 400, {"error": "Invalid order"})
-            c = db(); clean = []; total = 0
+            c = db(); clean = []; total = 0; reservation_started = False; oid = ""
             try:
                 for item in items:
-                    name = str(item.get("name", "")).strip()[:160]; qty = max(1, min(99, int(item.get("quantity", 1))))
+                    name = str(item.get("name", "")).strip()[:160]
+                    raw_qty = item.get("quantity")
+                    try:
+                        if isinstance(raw_qty, bool):
+                            raise ValueError
+                        qty = int(raw_qty)
+                    except (TypeError, ValueError):
+                        return send(self, 400, {"error": f"Invalid quantity: {name}"})
+                    if qty <= 0 or qty > 99:
+                        return send(self, 400, {"error": f"Invalid quantity: {name}"})
                     row = c.execute("SELECT * FROM products WHERE name=? AND active=1", (name,)).fetchone()
                     if not row: return send(self, 400, {"error": f"Product unavailable: {name}"})
-                    if row["stock"] > 0 and qty > row["stock"]: return send(self, 409, {"error": f"Insufficient stock: {name}"})
                     total += row["price_cents"] * qty
                     clean.append({"productId": row["id"], "name": row["name"], "quantity": qty, "priceCents": row["price_cents"]})
+                expires_at = reserve_order_stock(c, clean)
+                reservation_started = True
                 oid = "KC-" + datetime.now(timezone.utc).strftime("%Y%m%d") + "-" + secrets.token_hex(3).upper()
                 cur = c.cursor(); cur.execute("INSERT INTO customers(name,email,phone,address,city,postcode,country,created_at) VALUES(?,?,?,?,?,?,?,?)", (str(customer.get("name", ""))[:160], email, str(customer.get("phone", ""))[:60], str(customer.get("address", ""))[:250], str(customer.get("city", ""))[:120], str(customer.get("postcode", ""))[:20], str(customer.get("country", ""))[:80], now())); cid = cur.lastrowid
-                cur.execute("INSERT INTO orders(id,customer_id,email,total_cents,status,payment_status,shipping_status,items_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", (oid,cid,email,total,"NEW","UNPAID","UNFULFILLED",json.dumps(clean),now(),now())); c.commit()
+                cur.execute("INSERT INTO orders(id,customer_id,email,total_cents,status,payment_status,shipping_status,items_json,stock_reserved,reservation_expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (oid,cid,email,total,"NEW","UNPAID","UNFULFILLED",json.dumps(clean),sum(int(i["quantity"]) for i in clean),expires_at,now(),now())); c.commit()
+            except ValueError as exc:
+                c.rollback(); c.close(); return send(self, 400, {"error": str(exc)})
+            except RuntimeError as exc:
+                c.rollback(); c.close(); return send(self, 409, {"error": str(exc)})
+            except Exception:
+                c.rollback(); c.close(); return send(self, 500, {"error": "Unable to create order"})
             finally:
-                c.close()
+                try:
+                    c.close()
+                except Exception:
+                    pass
             try:
                 session = create_stripe_checkout(oid, email, clean)
             except RuntimeError as exc:
+                if reservation_started:
+                    c = db(); release_order_reservation(c, oid); c.commit(); c.close()
                 return send(self, 503, {"error": str(exc), "orderId": oid})
             if session:
                 c = db(); c.execute("UPDATE orders SET stripe_session_id=?,updated_at=? WHERE id=?", (session.get("id"), now(), oid)); c.commit(); c.close()
                 return send(self, 201, {"ok": True, "orderId": oid, "totalCents": total, "checkoutUrl": session.get("url"), "paymentRequired": True})
+            if reservation_started:
+                c = db(); release_order_reservation(c, oid); c.commit(); c.close()
             return send(self, 201, {"ok": True, "orderId": oid, "totalCents": total, "paymentRequired": False, "message": "Payment provider is not configured yet."})
-
-        # Backwards-compatible order endpoint; creates an unpaid order without checkout.
         if path == "/api/orders":
-            data["items"] = data.get("items", []); data["customer"] = data.get("customer", {}); data["email"] = data.get("email", "")
-            # Reuse checkout logic by redirecting internally is intentionally avoided; frontend uses /checkout.
             return send(self, 410, {"error": "Use /api/checkout"})
-
         if path == "/api/admin/gallery/albums/save":
             if not session_ok(self):return send(self,401,{"error":"Unauthorized"})
             try:
@@ -881,12 +979,23 @@ class Handler(SimpleHTTPRequestHandler):
             if not session_ok(self): return send(self, 401, {"error": "Unauthorized"})
             if path == "/api/admin/content":
                 content = data.get("content", DEFAULT_CONTENT)
-                c = db(); normalized = save_content(c, content); c.close(); return send(self, 200, {"ok": True, "content": normalized})
+                c = db()
+                try:
+                    normalized = save_content(c, content)
+                except Exception as exc:
+                    c.rollback(); c.close(); return send(self, 400, {"error": str(exc)})
+                c.close(); return send(self, 200, {"ok": True, "content": normalized})
             if path == "/api/admin/orders/status":
                 oid = str(data.get("id", "")); status = str(data.get("status", "NEW")).upper()
                 if status not in ORDER_STATUSES: return send(self, 400, {"error": "Invalid status"})
                 if status == "PAID": return send(self, 409, {"error": "PAID is provider-confirmed and cannot be set manually."})
-                c = db(); c.execute("UPDATE orders SET status=?,updated_at=? WHERE id=?", (status, now(), oid))
+                c = db(); row = c.execute("SELECT status,payment_status,stock_reserved FROM orders WHERE id=?", (oid,)).fetchone()
+                if not row: c.close(); return send(self, 404, {"error": "Order not found"})
+                if row["payment_status"] != "PAID" and status not in {"NEW", "CANCELLED"}:
+                    c.close(); return send(self, 409, {"error": "Unpaid orders can only be NEW or CANCELLED."})
+                c.execute("UPDATE orders SET status=?,updated_at=? WHERE id=?", (status, now(), oid))
+                if status in {"CANCELLED", "REFUNDED"} and row["stock_reserved"]:
+                    release_order_reservation(c, oid)
                 c.commit(); c.close(); return send(self, 200, {"ok": True})
         return send(self, 404, {"error": "Not found"})
 
@@ -894,20 +1003,6 @@ class Handler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         if not session_ok(self): return send(self, 401, {"error": "Unauthorized"})
         q = parse_qs(urlparse(self.path).query); c = db()
-        # Serve uploaded images explicitly so /backend/uploads/* works reliably across local and production servers.
-        if path.startswith("/backend/uploads/"):
-            target = _safe_upload_path(path)
-            if target is None or not target.is_file():
-                return send(self, 404, {"error": "Image not found"})
-            data = target.read_bytes()
-            mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}.get(target.suffix.lower(), "application/octet-stream")
-            self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
-            self.end_headers()
-            self.wfile.write(data)
-            return
         if path.startswith("/api/admin/gallery/media/"):
             m=re.fullmatch(r"/api/admin/gallery/media/(\d+)",path)
             if not m:
