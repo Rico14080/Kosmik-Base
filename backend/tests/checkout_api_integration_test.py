@@ -45,6 +45,18 @@ def request_json(base: str, payload: dict) -> tuple[int, dict]:
         return exc.code, json.loads(exc.read())
 
 
+def get_status(base: str, order_id: str, status_token: str | None = None) -> tuple[int, dict]:
+    url = f"{base}/api/orders/status?id={order_id}"
+    if status_token is not None:
+        url += f"&token={status_token}"
+    req = Request(url, headers={"Accept": "application/json"}, method="GET")
+    try:
+        with urlopen(req, timeout=5) as response:
+            return response.status, json.loads(response.read())
+    except HTTPError as exc:
+        return exc.code, json.loads(exc.read())
+
+
 def main() -> None:
     setup_test_db()
     original_stripe = server.create_stripe_checkout
@@ -66,14 +78,28 @@ def main() -> None:
         assert body["ok"] is True and body["paymentRequired"] is False
         assert body["totalCents"] == 1250, body
         order_id = body["orderId"]
+        status_token = body["statusToken"]
         assert order_id.startswith("KC-") and len(order_id) >= 18, order_id
+        assert isinstance(status_token, str) and len(status_token) >= 32, status_token
 
         c = server.db()
         product = c.execute("SELECT stock,reserved_stock FROM products WHERE name=?", ("Integration Product",)).fetchone()
-        order = c.execute("SELECT status,payment_status,stock_reserved FROM orders WHERE id=?", (order_id,)).fetchone()
+        order = c.execute("SELECT status,payment_status,stock_reserved,status_token FROM orders WHERE id=?", (order_id,)).fetchone()
         c.close()
         assert tuple(product) == (2, 0), tuple(product)
-        assert tuple(order) == ("NEW", "UNPAID", 0), tuple(order)
+        assert tuple(order[:3]) == ("NEW", "UNPAID", 0), tuple(order)
+        assert order["status_token"] == status_token
+
+        status, body = get_status(base, order_id)
+        assert status == 400, (status, body)
+
+        status, body = get_status(base, order_id, "wrong-token")
+        assert status == 404, (status, body)
+
+        status, body = get_status(base, order_id, status_token)
+        assert status == 200, (status, body)
+        assert body["orderId"] == order_id
+        assert body["paymentStatus"] == "UNPAID"
 
         status, body = request_json(
             base,
