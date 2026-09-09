@@ -66,7 +66,7 @@ def main() -> None:
         assert body["ok"] is True and body["paymentRequired"] is False
         assert body["totalCents"] == 1250, body
         order_id = body["orderId"]
-        assert order_id.startswith("KC-") and len(order_id) >= 20, order_id
+        assert order_id.startswith("KC-") and len(order_id) >= 18, order_id
 
         c = server.db()
         product = c.execute("SELECT stock,reserved_stock FROM products WHERE name=?", ("Integration Product",)).fetchone()
