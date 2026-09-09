@@ -19,6 +19,9 @@ The backend already emits:
 
 These controls still require validation behind the real HTTPS reverse proxy/CDN. They are not a substitute for the staging deployment check.
 
+### Automated HTTP security regression coverage
+`backend/tests/security_http_regression_test.py` now exercises the live HTTP handler against a temporary SQLite database. It verifies the baseline security headers, blocks direct access to protected backend files, requires authentication on representative Admin endpoints, rejects malformed JSON, and rejects unsigned Stripe webhook requests. The test is part of CI.
+
 ### Admin session
 The current backend uses random bearer session tokens, stores only a token hash in the session table, applies a 12-hour TTL, and rate-limits login attempts. Admin endpoints check the authenticated session before performing privileged operations.
 
