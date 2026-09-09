@@ -33,18 +33,22 @@ Upload and media access use constrained filename validation and resolved-path co
 ### Stripe webhook
 The Stripe webhook verifier checks the timestamp tolerance and compares the HMAC-SHA256 signature with `hmac.compare_digest`. Production verification still requires a real Stripe test-mode webhook against HTTPS staging.
 
+### Checkout pricing/inventory
+The HTTP checkout integration test verifies that the server reconstructs the order total from the database rather than trusting the client-provided price, and that an excessive quantity is rejected when stock is insufficient. The same test verifies that a non-paid checkout releases its reservation.
+
 ## Open implementation gates
 
 1. **CSP hardening** — remove `unsafe-inline` from `script-src`. The frontend currently contains dynamic inline style mutations, so this must be refactored without breaking the visual effects.
 2. **Admin authentication model** — decide between retaining bearer tokens with stronger XSS defenses or moving to an HttpOnly/Secure/SameSite cookie session plus an explicit CSRF mechanism.
 3. **Session lifecycle** — add/verify explicit expiry cleanup, logout invalidation, authorization boundaries and production secret requirements.
-4. **API validation** — systematically test malformed JSON, missing/incorrect content types, oversized payloads, invalid IDs, invalid quantities, path traversal strings, and unexpected fields.
-5. **Error surfaces** — ensure production responses do not expose exception details or internal paths; server logs must not become a substitute for safe API responses.
-6. **CORS/origin policy** — verify that the deployment does not accidentally become a cross-origin authenticated API.
-7. **HTTPS/staging** — deploy the exact branch to a disposable HTTPS environment with persistent SQLite storage/backup strategy and a rollback point.
-8. **Stripe test flow** — verify checkout creation, signed webhook delivery, duplicate webhook idempotency, expiry/cancellation stock release, and paid-order stock decrement.
-9. **E2E** — verify Home → Shop → Product → Bag → Checkout/confirmation on desktop and mobile.
-10. **Performance/accessibility/SEO** — complete Lighthouse-style checks, reduced-motion behavior, keyboard navigation, metadata, canonical URLs and image loading.
+4. **Order-status privacy** — `/api/orders/status?id=...` is currently unauthenticated and exposes order/payment/shipping state. The order identifier also uses only a short random suffix. Before production, replace this with a high-entropy status token or require an authenticated/unguessable customer status credential, and add an automated regression test proving that possession of a predictable order ID is insufficient to enumerate order state.
+5. **API validation** — systematically test malformed JSON, missing/incorrect content types, oversized payloads, invalid IDs, invalid quantities, path traversal strings, and unexpected fields.
+6. **Error surfaces** — ensure production responses do not expose exception details or internal paths; server logs must not become a substitute for safe API responses.
+7. **CORS/origin policy** — verify that the deployment does not accidentally become a cross-origin authenticated API.
+8. **HTTPS/staging** — deploy the exact branch to a disposable HTTPS environment with persistent SQLite storage/backup strategy and a rollback point.
+9. **Stripe test flow** — verify checkout creation, signed webhook delivery, duplicate webhook idempotency, expiry/cancellation stock release, and paid-order stock decrement.
+10. **E2E** — verify Home → Shop → Product → Bag → Checkout/confirmation on desktop and mobile.
+11. **Performance/accessibility/SEO** — complete Lighthouse-style checks, reduced-motion behavior, keyboard navigation, metadata, canonical URLs and image loading.
 
 ## Production rule
 
