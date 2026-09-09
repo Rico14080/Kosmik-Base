@@ -16,46 +16,55 @@ Branch di lavoro: `development`
 - Global frontend regression guard for Bag label/count separation and no-ticket event links.
 - Contact form honeypot converted to semantic hidden markup.
 - CI validates frontend inventory, JavaScript syntax, Python compilation, checkout regression tests, Admin resource wiring, browser smoke and secret/database guards.
-- A production inventory regression suite was added to enforce the explicit production contract for stock and quantities.
-- A restore branch `backup/pre-production-audit-20260909` was created before the new production-gate work.
+- Production inventory regression suite enforces the explicit production contract for stock and quantities.
+- Restore branch `backup/pre-production-audit-20260909` was created before the production-gate work.
 - `.env.example` and `docs/PRODUCTION_READINESS.md` were added.
 
-## Real CI validation
+## Real CI validation — PASS
 
-### PASS
+The current `development` head was validated by GitHub Actions run #150.
+
+All checks passed:
 
 - Frontend file inventory.
 - JavaScript syntax.
 - Python compilation.
 - Existing Phase 1 checkout regression suite.
+- Production inventory guard suite.
 - Admin/CSP resource wiring.
-- Browser smoke tests against a live GitHub Actions-hosted local backend.
+- Browser smoke tests against the live local backend started inside CI.
 - Secret/database tracking guard.
 
-### FAIL — intentional production gate
+## Inventory production gate — CLOSED
 
-The new production inventory guard fails because the current backend still treats `stock=0` as available in `reserve_order_stock`.
+The backend now:
 
-The CI log reproduced:
+- rejects `stock=0` as unavailable;
+- rejects quantities below 1;
+- rejects quantities above 99;
+- rejects malformed/non-integer quantities instead of silently converting them to `1`;
+- reserves only finite available stock;
+- keeps reservation updates inside the SQLite transaction used by the checkout flow.
 
-`AssertionError: Reservation unexpectedly succeeded`
+The regression suite covers stock 0, stock 1, exact available stock, excessive quantity, invalid quantities, and already-reserved units.
 
-The failure is useful and must be fixed in backend logic. The test must not be removed or weakened.
+## Phase 1 status
 
-The same production contract requires zero and negative quantities to be rejected rather than silently normalized to `1`.
+**CODE GATE: GREEN.**
 
-## Remaining production-gate work
+Phase 1 is complete from the automated/code-validation standpoint. It is not yet a production deployment approval: real Stripe test-mode verification, HTTPS/staging, domain/hosting configuration, Admin session/CSRF review, and production performance verification remain external or Phase 2 work.
 
-1. Fix backend stock-zero semantics.
-2. Reject zero/negative/malformed quantities server-side.
-3. Add/verify price-change and product-removal checkout races.
-4. Complete strict CSP work without breaking runtime behaviour.
-5. Improve Admin session/cookie and CSRF strategy.
-6. Finish Matrix pause/cleanup/performance lifecycle.
-7. Run full end-to-end checkout tests against a real staging deployment.
-8. Verify Stripe test-mode webhook behaviour with real external configuration.
-9. Complete deployment, monitoring, backup and rollback documentation.
+## Phase 2 entry queue
+
+1. Strict CSP hardening without breaking runtime behaviour.
+2. Admin authentication/session and CSRF review.
+3. Production HTTP security headers and cache policy review.
+4. CORS/origin and API error-surface review.
+5. Staging deployment and HTTPS verification.
+6. Stripe test-mode checkout + webhook + replay verification.
+7. Real-flow mobile/desktop and checkout verification.
+8. Monitoring, database persistence/backup and rollback validation.
 
 ## Important
 
-`main` remains untouched by this work. Do not promote the branch while the production inventory guard is red.
+`main` remains untouched by this work. The Phase 2 branch starts from the green Phase 1 head. Do not declare `READY FOR PRODUCTION` until automated tests and the real staged application flow have both been verified.
