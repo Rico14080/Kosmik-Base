@@ -198,6 +198,10 @@ def price_cents(value: object) -> int:
         return 0
 
 
+def new_status_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
 def init_db() -> None:
     c = db()
     c.executescript("""
@@ -208,7 +212,7 @@ def init_db() -> None:
     CREATE TABLE IF NOT EXISTS gallery_albums (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, slug TEXT UNIQUE, date TEXT, location TEXT, venue TEXT, description TEXT, cover_image TEXT, sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS gallery_media (id INTEGER PRIMARY KEY AUTOINCREMENT, album_id INTEGER NOT NULL, original_name TEXT NOT NULL, stored_name TEXT NOT NULL UNIQUE, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, FOREIGN KEY(album_id) REFERENCES gallery_albums(id) ON DELETE CASCADE);
     CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT NOT NULL, phone TEXT, address TEXT, city TEXT, postcode TEXT, country TEXT, created_at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, customer_id INTEGER, email TEXT NOT NULL, total_cents INTEGER NOT NULL, status TEXT NOT NULL, payment_status TEXT NOT NULL, shipping_status TEXT NOT NULL, items_json TEXT NOT NULL, stripe_session_id TEXT, stock_applied INTEGER NOT NULL DEFAULT 0, stock_reserved INTEGER NOT NULL DEFAULT 0, reservation_expires_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, customer_id INTEGER, email TEXT NOT NULL, total_cents INTEGER NOT NULL, status TEXT NOT NULL, payment_status TEXT NOT NULL, shipping_status TEXT NOT NULL, items_json TEXT NOT NULL, stripe_session_id TEXT, stock_applied INTEGER NOT NULL DEFAULT 0, stock_reserved INTEGER NOT NULL DEFAULT 0, reservation_expires_at TEXT, status_token TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
     """)
@@ -224,6 +228,11 @@ def init_db() -> None:
         c.execute("ALTER TABLE orders ADD COLUMN stock_reserved INTEGER NOT NULL DEFAULT 0")
     if "reservation_expires_at" not in ocols:
         c.execute("ALTER TABLE orders ADD COLUMN reservation_expires_at TEXT")
+    if "status_token" not in ocols:
+        c.execute("ALTER TABLE orders ADD COLUMN status_token TEXT")
+    legacy_status_rows = c.execute("SELECT id FROM orders WHERE status_token IS NULL OR status_token='' ").fetchall()
+    for r in legacy_status_rows:
+        c.execute("UPDATE orders SET status_token=? WHERE id=?", (new_status_token(), r["id"]))
     row = c.execute("SELECT content FROM site_content WHERE id=1").fetchone()
     if not row:
         c.execute("INSERT INTO site_content VALUES(1,?,?)", (json.dumps(DEFAULT_CONTENT, ensure_ascii=False), now()))
@@ -723,10 +732,12 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/config":
             return send(self, 200, {"paymentProvider": "stripe" if STRIPE_SECRET_KEY else None, "paymentsEnabled": bool(STRIPE_SECRET_KEY and PUBLIC_BASE_URL.startswith("https://"))})
         if path == "/api/orders/status":
-            oid = parse_qs(urlparse(self.path).query).get("id", [""])[0].strip()[:80]
-            if not oid:
-                return send(self, 400, {"error": "Missing order id"})
-            c = db(); row = c.execute("SELECT id,status,payment_status,shipping_status FROM orders WHERE id=?", (oid,)).fetchone(); c.close()
+            query = parse_qs(urlparse(self.path).query)
+            oid = query.get("id", [""])[0].strip()[:80]
+            status_token = query.get("token", [""])[0].strip()[:200]
+            if not oid or not status_token:
+                return send(self, 400, {"error": "Missing order credentials"})
+            c = db(); row = c.execute("SELECT id,status,payment_status,shipping_status FROM orders WHERE id=? AND status_token=?", (oid, status_token)).fetchone(); c.close()
             if not row:
                 return send(self, 404, {"error": "Order not found"})
             return send(self, 200, {"orderId": row["id"], "status": row["status"], "paymentStatus": row["payment_status"], "shippingStatus": row["shipping_status"]})
@@ -923,7 +934,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return send(self, 429, {"error": "Too many checkout attempts. Try again later."})
             email = str(data.get("email", "")).strip()[:200]; items = data.get("items", []); customer = data.get("customer", {}) or {}
             if not valid_email(email) or not isinstance(items, list) or not items or len(items) > 50: return send(self, 400, {"error": "Invalid order"})
-            c = db(); clean = []; total = 0; reservation_started = False; oid = ""
+            c = db(); clean = []; total = 0; reservation_started = False; oid = ""; status_token = ""
             try:
                 for item in items:
                     name = str(item.get("name", "")).strip()[:160]
@@ -943,8 +954,9 @@ class Handler(SimpleHTTPRequestHandler):
                 expires_at = reserve_order_stock(c, clean)
                 reservation_started = True
                 oid = "KC-" + datetime.now(timezone.utc).strftime("%Y%m%d") + "-" + secrets.token_hex(3).upper()
+                status_token = new_status_token()
                 cur = c.cursor(); cur.execute("INSERT INTO customers(name,email,phone,address,city,postcode,country,created_at) VALUES(?,?,?,?,?,?,?,?)", (str(customer.get("name", ""))[:160], email, str(customer.get("phone", ""))[:60], str(customer.get("address", ""))[:250], str(customer.get("city", ""))[:120], str(customer.get("postcode", ""))[:20], str(customer.get("country", ""))[:80], now())); cid = cur.lastrowid
-                cur.execute("INSERT INTO orders(id,customer_id,email,total_cents,status,payment_status,shipping_status,items_json,stock_reserved,reservation_expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (oid,cid,email,total,"NEW","UNPAID","UNFULFILLED",json.dumps(clean),sum(int(i["quantity"]) for i in clean),expires_at,now(),now())); c.commit()
+                cur.execute("INSERT INTO orders(id,customer_id,email,total_cents,status,payment_status,shipping_status,items_json,stock_reserved,reservation_expires_at,status_token,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (oid,cid,email,total,"NEW","UNPAID","UNFULFILLED",json.dumps(clean),sum(int(i["quantity"]) for i in clean),expires_at,status_token,now(),now())); c.commit()
             except ValueError as exc:
                 c.rollback(); c.close(); return send(self, 400, {"error": str(exc)})
             except RuntimeError as exc:
@@ -964,10 +976,10 @@ class Handler(SimpleHTTPRequestHandler):
                 return send(self, 503, {"error": str(exc), "orderId": oid})
             if session:
                 c = db(); c.execute("UPDATE orders SET stripe_session_id=?,updated_at=? WHERE id=?", (session.get("id"), now(), oid)); c.commit(); c.close()
-                return send(self, 201, {"ok": True, "orderId": oid, "totalCents": total, "checkoutUrl": session.get("url"), "paymentRequired": True})
+                return send(self, 201, {"ok": True, "orderId": oid, "statusToken": status_token, "totalCents": total, "checkoutUrl": session.get("url"), "paymentRequired": True})
             if reservation_started:
                 c = db(); release_order_reservation(c, oid); c.commit(); c.close()
-            return send(self, 201, {"ok": True, "orderId": oid, "totalCents": total, "paymentRequired": False, "message": "Payment provider is not configured yet."})
+            return send(self, 201, {"ok": True, "orderId": oid, "statusToken": status_token, "totalCents": total, "paymentRequired": False, "message": "Payment provider is not configured yet."})
         if path == "/api/orders":
             return send(self, 410, {"error": "Use /api/checkout"})
         if path == "/api/admin/gallery/albums/save":
