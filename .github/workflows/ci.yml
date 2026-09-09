@@ -15,7 +15,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html admin.html 404.html site.js style.css site.webmanifest robots.txt security.txt; do
+          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html admin.html 404.html site.js checkout-fix.js site-fixes.js admin.js admin-ops.js style.css admin.css site.webmanifest robots.txt security.txt; do
             test -f "$f"
           done
 
@@ -24,13 +24,16 @@ jobs:
         run: |
           set -e
           node --check site.js
-          if test -f admin.js; then node --check admin.js; fi
+          node --check checkout-fix.js
+          node --check site-fixes.js
+          node --check admin.js
+          node --check admin-ops.js
 
       - name: Validate Python sources when present
         shell: bash
         run: |
           set -e
-          files=(backend/server.py backend/backup.py backend/seed_gallery_demo.py backend/seed_temp_image_slots.py backend/tests/smoke_test.py check_image_slots.py)
+          files=(backend/server.py backend/backup.py backend/seed_gallery_demo.py backend/seed_temp_image_slots.py backend/tests/smoke_test.py backend/tests/phase1_checkout_test.py backend/tests/production_inventory_guard_test.py backend/tests/checkout_api_integration_test.py backend/tests/security_http_regression_test.py backend/tests/browser_smoke.py check_image_slots.py)
           present=()
           for f in "${files[@]}"; do
             if test -f "$f"; then present+=("$f"); fi
@@ -38,6 +41,69 @@ jobs:
           if [ ${#present[@]} -gt 0 ]; then
             python -m py_compile "${present[@]}"
           fi
+
+      - name: Run Phase 1 checkout regression tests
+        shell: bash
+        run: |
+          set -e
+          python backend/tests/phase1_checkout_test.py
+
+      - name: Run production inventory guard tests
+        shell: bash
+        run: |
+          set -e
+          python backend/tests/production_inventory_guard_test.py
+
+      - name: Run checkout API integration tests
+        shell: bash
+        run: |
+          set -e
+          python backend/tests/checkout_api_integration_test.py
+
+      - name: Run HTTP security regression tests
+        shell: bash
+        run: |
+          set -e
+          python backend/tests/security_http_regression_test.py
+
+      - name: Validate Admin/CSP resource wiring
+        shell: bash
+        run: |
+          set -e
+          if grep -nE '<style|style="' admin.html; then
+            echo 'Inline Admin style detected.'
+            exit 1
+          fi
+          if grep -n '<script' admin.html | grep -v 'src='; then
+            echo 'Inline Admin script detected.'
+            exit 1
+          fi
+          grep -q 'admin.css' admin.html
+          grep -q 'admin.js' admin.html
+          grep -q 'admin-ops.js' admin.html
+          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html 404.html; do
+            grep -q 'site-fixes.js' "$f"
+          done
+
+      - name: Browser smoke tests
+        shell: bash
+        run: |
+          set -e
+          python -m pip install --disable-pip-version-check playwright
+          python backend/server.py >/tmp/kosmik-server.log 2>&1 &
+          SERVER_PID=$!
+          cleanup() {
+            kill "$SERVER_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for _ in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/api/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/api/health >/dev/null
+          KOSMIK_BASE_URL=http://127.0.0.1:8080 python backend/tests/browser_smoke.py
 
       - name: Block committed secrets
         shell: bash
