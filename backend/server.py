@@ -212,7 +212,6 @@ def init_db() -> None:
     CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
     """)
-    # Non-destructive migrations for existing V1.x databases.
     pcols = {r[1] for r in c.execute("PRAGMA table_info(products)").fetchall()}
     if "reserved_stock" not in pcols:
         c.execute("ALTER TABLE products ADD COLUMN reserved_stock INTEGER NOT NULL DEFAULT 0")
@@ -423,12 +422,14 @@ def reserve_order_stock(c: sqlite3.Connection, items: list[dict]) -> str:
         stock = int(product["stock"])
         reserved = int(product["reserved_stock"] or 0)
         qty = int(item["quantity"])
-        if stock > 0 and qty > max(0, stock - reserved):
+        if qty <= 0 or qty > 99:
+            raise ValueError(f"Invalid quantity: {item['name']}")
+        if stock <= 0:
+            raise ValueError(f"Product out of stock: {item['name']}")
+        if qty > max(0, stock - reserved):
             raise RuntimeError(f"Insufficient stock: {item['name']}")
     for item in items:
-        product = c.execute("SELECT stock FROM products WHERE id=?", (int(item["productId"]),)).fetchone()
-        if product and int(product["stock"]) > 0:
-            c.execute("UPDATE products SET reserved_stock=reserved_stock+?,updated_at=? WHERE id=?", (int(item["quantity"]), now(), int(item["productId"])))
+        c.execute("UPDATE products SET reserved_stock=reserved_stock+?,updated_at=? WHERE id=?", (int(item["quantity"]), now(), int(item["productId"])))
     return reservation_expiry()
 
 
@@ -926,10 +927,15 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 for item in items:
                     name = str(item.get("name", "")).strip()[:160]
+                    raw_qty = item.get("quantity")
                     try:
-                        qty = max(1, min(99, int(item.get("quantity", 1))))
+                        if isinstance(raw_qty, bool):
+                            raise ValueError
+                        qty = int(raw_qty)
                     except (TypeError, ValueError):
-                        qty = 1
+                        return send(self, 400, {"error": f"Invalid quantity: {name}"})
+                    if qty <= 0 or qty > 99:
+                        return send(self, 400, {"error": f"Invalid quantity: {name}"})
                     row = c.execute("SELECT * FROM products WHERE name=? AND active=1", (name,)).fetchone()
                     if not row: return send(self, 400, {"error": f"Product unavailable: {name}"})
                     total += row["price_cents"] * qty
@@ -938,7 +944,9 @@ class Handler(SimpleHTTPRequestHandler):
                 reservation_started = True
                 oid = "KC-" + datetime.now(timezone.utc).strftime("%Y%m%d") + "-" + secrets.token_hex(3).upper()
                 cur = c.cursor(); cur.execute("INSERT INTO customers(name,email,phone,address,city,postcode,country,created_at) VALUES(?,?,?,?,?,?,?,?)", (str(customer.get("name", ""))[:160], email, str(customer.get("phone", ""))[:60], str(customer.get("address", ""))[:250], str(customer.get("city", ""))[:120], str(customer.get("postcode", ""))[:20], str(customer.get("country", ""))[:80], now())); cid = cur.lastrowid
-                cur.execute("INSERT INTO orders(id,customer_id,email,total_cents,status,payment_status,shipping_status,items_json,stock_reserved,reservation_expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (oid,cid,email,total,"NEW","UNPAID","UNFULFILLED",json.dumps(clean),sum(int(i["quantity"]) for i in clean if int(c.execute("SELECT stock FROM products WHERE id=?",(i["productId"],)).fetchone()[0])>0),expires_at,now(),now())); c.commit()
+                cur.execute("INSERT INTO orders(id,customer_id,email,total_cents,status,payment_status,shipping_status,items_json,stock_reserved,reservation_expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (oid,cid,email,total,"NEW","UNPAID","UNFULFILLED",json.dumps(clean),sum(int(i["quantity"]) for i in clean),expires_at,now(),now())); c.commit()
+            except ValueError as exc:
+                c.rollback(); c.close(); return send(self, 400, {"error": str(exc)})
             except RuntimeError as exc:
                 c.rollback(); c.close(); return send(self, 409, {"error": str(exc)})
             except Exception:
@@ -957,7 +965,6 @@ class Handler(SimpleHTTPRequestHandler):
             if session:
                 c = db(); c.execute("UPDATE orders SET stripe_session_id=?,updated_at=? WHERE id=?", (session.get("id"), now(), oid)); c.commit(); c.close()
                 return send(self, 201, {"ok": True, "orderId": oid, "totalCents": total, "checkoutUrl": session.get("url"), "paymentRequired": True})
-            # No payment provider: do not leave a reservation hanging indefinitely.
             if reservation_started:
                 c = db(); release_order_reservation(c, oid); c.commit(); c.close()
             return send(self, 201, {"ok": True, "orderId": oid, "totalCents": total, "paymentRequired": False, "message": "Payment provider is not configured yet."})
