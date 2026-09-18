@@ -1,34 +1,57 @@
 # Kosmik Circles — Kosmik-Base
 
-Sorgente ufficiale del sito Kosmik Circles.
+Sorgente ufficiale del sito del collettivo.
 
-## Stato progetto
+## Stato
 
-- Versione di partenza: V1.14
-- `main`: versione stabile
-- `development`: branch di lavoro e test
-- Roadmap: `Kosmik_Circles_Roadmap_Operativa.pdf` (gestita fuori dalla repo) e documentazione in `docs/`
-- Backend canonico: `backend/server.py`
+**Non pronto per la produzione.** La revisione del 18 settembre 2026 ha individuato blocchi di sicurezza, Admin e checkout ancora aperti. I test automatici esistenti passano, ma non coprono tutti i casi della revisione.
 
-## Regole di sviluppo
+- [Elenco verificato dei problemi e priorità](docs/PHASE_2_SECURITY_AUDIT.md)
+- [Checklist unica per il lancio](docs/PRODUCTION_READINESS.md)
+- [Avvio backend e API](backend/README.md)
+- [Asset fotografici e ottimizzazione](docs/IMAGE_OPTIMIZATION.md)
 
-1. Le modifiche applicative vengono sviluppate su `development`.
-2. `main` viene aggiornato solo dopo verifica e test.
-3. Non committare segreti, `.env`, database locali, upload privati, virtual environment, cache o log.
-4. La grafica e l'identita Kosmik Circles devono rimanere invariati salvo richieste esplicite o miglioramenti UX concordati.
+## Struttura
 
-## Controlli automatici
+- HTML, CSS e JavaScript nella radice: sito pubblico e Admin.
+- `backend/server.py`: backend canonico Python standard library + SQLite.
+- `backend/tests/`: test di inventario, HTTP, checkout e browser.
+- `.env.example`: unico riferimento per le variabili di ambiente; non contiene credenziali.
+- `docs/`: documentazione corrente.
+- `.github/workflows/ci.yml`: controlli automatici.
 
-GitHub Actions verifica la presenza delle pagine principali, la sintassi JavaScript, la compilazione delle sorgenti Python e l'assenza di segreti Stripe live e file `.env`/database tracciati.
+I JPEG originali e i WebP derivati non sono copie binarie identiche: conservare gli originali finché la selezione dei media definitivi non è conclusa. I report storici rimossi restano nella cronologia Git.
 
-## Fase 0 completata
+## Sviluppo
 
-La repository e' stata organizzata con branch di sviluppo separata, `.gitignore` specifico, documentazione iniziale, CI e backend V1.14 ripristinato nella posizione canonica.
+`main` è la baseline pubblicata nella repository; `development` contiene la fase 1. Il lavoro più avanzato è su `phase-2-security-deployment-v2`, nella [PR #15](https://github.com/Rico14080/Kosmik-Base/pull/15). Non ricreare correzioni già presenti nelle PR precedenti.
 
-## Fase 1 in corso
+1. Sviluppare su development o sul branch di lavoro dedicato; aggiornare main solo dopo test e revisione.
+2. Mantenere l'identità grafica salvo modifiche richieste.
+3. Correggere i controller esistenti, evitando ulteriori script di correzione sovrapposti.
+4. Non committare .env, credenziali, database, upload privati, cache o log.
+5. Mantenere una sola checklist e un solo elenco dei problemi aggiornato.
 
-L'audit tecnico ha gia' individuato aree prioritarie su checkout/inventario, CSP/Admin, performance Matrix e alcuni dettagli frontend. I problemi sono tracciati nelle Issue GitHub e verranno risolti progressivamente su `development` prima del merge in `main`.
+## Avvio locale
 
-### Nota produzione
+Da questa cartella, PowerShell:
 
-Stripe, SMTP, dominio, HTTPS e configurazione hosting restano attivita' di produzione da completare con le credenziali e gli account esterni reali.
+```powershell
+$env:KOSMIK_ADMIN_PASSWORD = "SCEGLI_UNA_PASSWORD_LUNGA_E_CASUALE"
+python backend/server.py
+```
+
+Aprire [sito locale](http://127.0.0.1:8080/) o [Admin](http://127.0.0.1:8080/admin.html). L'Admin presenta attualmente i problemi elencati nella revisione.
+
+Il server legge le variabili dell'ambiente del processo: copiare `.env.example` in `.env` non le carica automaticamente. Per il lancio usare l'ambiente/secret manager dell'hosting.
+
+## Verifiche locali
+
+```text
+python backend/tests/phase1_checkout_test.py
+python backend/tests/production_inventory_guard_test.py
+python backend/tests/checkout_api_integration_test.py
+python backend/tests/security_http_regression_test.py
+```
+
+Con server avviato: `python backend/tests/smoke_test.py`. Il test browser richiede Playwright e un browser Chromium disponibile; vedere la CI. Nessuno di questi controlli sostituisce pagamento, email, backup e verifica HTTPS in staging.
