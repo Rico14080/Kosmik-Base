@@ -1,50 +1,57 @@
 # Kosmik Circles — Kosmik-Base
 
-Sorgente ufficiale del sito Kosmik Circles.
+Sorgente ufficiale del sito del collettivo.
 
-## Stato progetto
+## Stato
 
-- `main`: baseline stabile
-- `development`: sviluppo e test applicativo
-- `phase-2-security-deployment-v2`: hardening sicurezza e preparazione al deployment
-- `backup/pre-production-audit-20260909`: restore point pre-produzione
-- Backend canonico: `backend/server.py`
-- Documentazione tecnica e di produzione: `docs/`
+**Non pronto per la produzione.** La revisione del 18 settembre 2026 ha individuato blocchi di sicurezza, Admin e checkout ancora aperti. I test automatici esistenti passano, ma non coprono tutti i casi della revisione.
 
-## Struttura principale
+- [Elenco verificato dei problemi e priorità](docs/PHASE_2_SECURITY_AUDIT.md)
+- [Checklist unica per il lancio](docs/PRODUCTION_READINESS.md)
+- [Avvio backend e API](backend/README.md)
+- [Asset fotografici e ottimizzazione](docs/IMAGE_OPTIMIZATION.md)
 
-- pagine HTML del sito: homepage, shop, cart/bag, gallery, live, contact, us e admin
-- `backend/`: API Python standard-library + SQLite
-- `docs/`: roadmap e controlli di produzione
-- `.github/workflows/`: CI e controlli automatici
+## Struttura
 
-## Regole di sviluppo
+- HTML, CSS e JavaScript nella radice: sito pubblico e Admin.
+- `backend/server.py`: backend canonico Python standard library + SQLite.
+- `backend/tests/`: test di inventario, HTTP, checkout e browser.
+- `.env.example`: unico riferimento per le variabili di ambiente; non contiene credenziali.
+- `docs/`: documentazione corrente.
+- `.github/workflows/ci.yml`: controlli automatici.
 
-1. Le modifiche applicative vengono sviluppate su `development` o su un branch dedicato.
-2. `main` viene aggiornato solo dopo verifica, test e revisione.
-3. Non committare segreti, `.env`, database locali, upload privati, virtual environment, cache o log.
-4. La grafica e l'identità Kosmik Circles devono rimanere invariati salvo richieste esplicite o miglioramenti UX concordati.
+I JPEG originali e i WebP derivati non sono copie binarie identiche: conservare gli originali finché la selezione dei media definitivi non è conclusa. I report storici rimossi restano nella cronologia Git.
 
-## Controlli automatici
+## Sviluppo
 
-GitHub Actions verifica pagine e asset principali, sintassi JavaScript, compilazione Python, test di inventario/checkout e guardrail contro segreti Stripe live e file `.env`/database tracciati.
+`main` è la baseline pubblicata nella repository; `development` contiene la fase 1. Il lavoro più avanzato è su `phase-2-security-deployment-v2`, nella [PR #15](https://github.com/Rico14080/Kosmik-Base/pull/15). Non ricreare correzioni già presenti nelle PR precedenti.
 
-## Avanzamento
+1. Sviluppare su development o sul branch di lavoro dedicato; aggiornare main solo dopo test e revisione.
+2. Mantenere l'identità grafica salvo modifiche richieste.
+3. Correggere i controller esistenti, evitando ulteriori script di correzione sovrapposti.
+4. Non committare .env, credenziali, database, upload privati, cache o log.
+5. Mantenere una sola checklist e un solo elenco dei problemi aggiornato.
 
-### Fase 0 — completata
+## Avvio locale
 
-Repository organizzata con branch di sviluppo, `.gitignore`, documentazione iniziale, CI e backend canonico.
+Da questa cartella, PowerShell:
 
-### Fase 1 — completata
+```powershell
+$env:KOSMIK_ADMIN_PASSWORD = "SCEGLI_UNA_PASSWORD_LUNGA_E_CASUALE"
+python backend/server.py
+```
 
-Hardening checkout/inventario completato. Sono coperti i casi di stock esaurito, quantità non valide, quantità oltre disponibilità e confini delle riserve. Il gate CI della Fase 1 è verde.
+Aprire [sito locale](http://127.0.0.1:8080/) o [Admin](http://127.0.0.1:8080/admin.html). L'Admin presenta attualmente i problemi elencati nella revisione.
 
-### Fase 2 — in corso
+Il server legge le variabili dell'ambiente del processo: copiare `.env.example` in `.env` non le carica automaticamente. Per il lancio usare l'ambiente/secret manager dell'hosting.
 
-La checklist comprende CSP, sessioni Admin/CSRF, security headers, API hardening, deployment HTTPS/staging, Stripe test-mode, E2E e passaggio finale performance/accessibilità/SEO.
+## Verifiche locali
 
-Le verifiche già presenti nel backend sono documentate in `docs/PHASE_2_SECURITY_AUDIT.md`. Restano obbligatori i test reali in staging prima di dichiarare il sito pronto per la produzione.
+```text
+python backend/tests/phase1_checkout_test.py
+python backend/tests/production_inventory_guard_test.py
+python backend/tests/checkout_api_integration_test.py
+python backend/tests/security_http_regression_test.py
+```
 
-### Nota produzione
-
-Stripe, SMTP, dominio, HTTPS, hosting, persistenza/backup e monitoraggio devono essere configurati con gli account esterni reali. Le credenziali devono restare fuori da Git e devono essere fornite tramite environment/secret manager del provider.
+Con server avviato: `python backend/tests/smoke_test.py`. Il test browser richiede Playwright e un browser Chromium disponibile; vedere la CI. Nessuno di questi controlli sostituisce pagamento, email, backup e verifica HTTPS in staging.

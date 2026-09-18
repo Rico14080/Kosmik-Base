@@ -1,74 +1,56 @@
-# Kosmik Circles — Production Readiness
+# Checklist unica per il lancio
 
-Updated: 2026-09-09
-Branch: `development`
+Aggiornata il 18 settembre 2026. Stato: **NON PRONTO PER LA PRODUZIONE**.
 
-## Current gate
+L'[audit corrente](PHASE_2_SECURITY_AUDIT.md) contiene problemi, prove e priorità. Questa pagina raccoglie solo le condizioni per passare al lancio; i vecchi report di fase restano recuperabili dalla cronologia Git.
 
-**NOT READY FOR PRODUCTION**
+## 1. Base tecnica
 
-This status is intentional. The repository is not promoted to `main` until the production inventory contract is enforced by the backend and the full validation suite is green.
+- [ ] Chiudere l'accesso ai file privati e verificare percorsi alternativi, HEAD, backup e file nascosti.
+- [ ] Ripristinare Admin, salvataggio delle intestazioni e dati eventi senza perdite.
+- [ ] Correggere disponibilità, prenotazioni, pagamento tardivo, webhook ripetuti e modifiche stock.
+- [ ] Unificare i flussi frontend di checkout, retry e conferma con token.
+- [ ] Completare ordini, indirizzi, spedizioni, rimborsi e messaggi.
+- [ ] Verificare sessioni, CSP, rate limit e proxy fidati.
+- [ ] Estendere i test esistenti con i casi emersi nell'audit.
 
-## Verified in GitHub CI
+## 2. Contenuti e attività del collettivo
 
-- Frontend file inventory: PASS
-- JavaScript syntax checks: PASS
-- Python compilation: PASS
-- Existing Phase 1 checkout regression suite: PASS
-- Admin external-resource/CSP wiring check: PASS
-- Local browser smoke suite served by the backend: PASS
-- Repository secret/database guard: PASS
-- New production inventory guard: FAIL (expected blocker; stock `0` is currently accepted by `reserve_order_stock`)
+- [ ] Testi, membri, servizi, contatti, social e lingua definitivi.
+- [ ] Foto autorizzate, crediti, album e media.
+- [ ] Eventi con data, luogo e link biglietti veri.
+- [ ] Merch con SKU, varianti/taglie, prezzi, foto e disponibilità reali.
+- [ ] Paesi, costi e tempi di spedizione; eventuale ritiro; resi e assistenza.
+- [ ] Informazioni dell'organizzazione e pagine informative/condizioni pertinenti all'attività.
+- [ ] Metadati, anteprime social, canonical e sitemap sul dominio definitivo.
 
-## Production blockers
+## 3. Infrastruttura e servizi
 
-### 1. Inventory semantics
+- [ ] Hosting che esegua Python, con storage persistente e accesso al backend solo tramite reverse proxy HTTPS.
+- [ ] Dominio registrato, DNS, certificato e PUBLIC_BASE_URL verificati.
+- [ ] KOSMIK_ADMIN_PASSWORD impostata tramite secret manager, fuori da Git.
+- [ ] Stripe test configurato con STRIPE_SECRET_KEY e STRIPE_WEBHOOK_SECRET.
+- [ ] Endpoint /api/stripe/webhook verificato, con eventi coerenti con l'implementazione e i metodi di pagamento abilitati.
+- [ ] SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM, SMTP_USE_TLS e SITE_OWNER_EMAIL configurati e collaudati.
+- [ ] Backup consistente di database, uploads e media in una posizione privata esterna alla radice pubblica.
+- [ ] Ripristino di un backup provato e monitoraggio degli errori/email attivo.
+- [ ] Limiti upload/download e spazio disco definiti per i video.
+- [ ] Piano di rollback con versione e dati compatibili.
 
-The backend currently treats `stock=0` as effectively unlimited in `reserve_order_stock`: availability checks and reservation updates are conditional on `stock > 0`. This violates the production contract that stock `0` means unavailable.
+Unico elenco delle variabili: [../.env.example](../.env.example). Il backend legge l'ambiente del processo, non carica automaticamente un file .env.
 
-The production guard test reproduces this exact failure in CI. Do not weaken or remove the test; fix the backend semantics instead.
+Durante aggiornamenti preservare backend/data/kosmik.db, backend/uploads/ e backend/media/. Lo script backup.py corrente non copre da solo tutti questi requisiti: vedere l'audit.
 
-### 2. Invalid quantities
+## 4. Staging e decisione finale
 
-The checkout endpoint currently normalizes malformed/non-positive quantities to `1`. Production behaviour should reject zero and negative quantities server-side rather than silently changing the customer's requested order.
+- [ ] CI verde sulla revisione esatta da distribuire.
+- [ ] Browser desktop/mobile, tastiera e riduzione delle animazioni verificati.
+- [ ] Login/logout/scadenza sessione Admin, modifica/salvataggio/ricarica contenuti.
+- [ ] Shop → carrello → pagamento test → webhook → conferma → evasione.
+- [ ] Ultimo pezzo concorrente, righe duplicate, quantità errata, prezzo cambiato, retry e pagamento tardivo.
+- [ ] Contatti, ricezione email, Gallery e download.
+- [ ] HTTPS, backup/restore e rollback verificati sullo staging.
+- [ ] Passaggio a Stripe live e controllo della configurazione finale.
+- [ ] Revisione finale con il collettivo e decisione di apertura.
 
-The production inventory test also covers this contract.
-
-### 3. Real payment verification
-
-Stripe Checkout/webhook behaviour still requires a real Stripe test-mode configuration and HTTPS staging endpoint. The repository alone cannot verify external provider credentials.
-
-### 4. Production Admin session strategy
-
-The current Admin flow uses a bearer token stored client-side. Before production, evaluate migration to secure cookie-based sessions (`Secure`, `HttpOnly`, `SameSite`) with an explicit CSRF strategy.
-
-### 5. CSP tightening
-
-The backend CSP still contains `unsafe-inline` for compatibility. The current Admin HTML has been moved to external scripts/styles, but the public runtime still uses dynamic inline styles. A stricter CSP needs a coordinated frontend refactor rather than a header-only change.
-
-### 6. Matrix lifecycle/performance
-
-The Matrix canvas currently runs a continuous animation frame loop. The visibility guard hides the canvas but does not yet stop the rendering loop. This requires a coordinated change to the Matrix lifecycle code and real browser performance verification.
-
-## Restore point
-
-A pre-production audit restore branch was created before this work:
-
-`backup/pre-production-audit-20260909`
-
-It points to the `development` baseline used for the audit.
-
-## Definition of done
-
-This file should only be changed to `READY FOR PRODUCTION` after:
-
-- inventory guard passes;
-- non-positive quantities are rejected;
-- concurrent last-unit checkout passes;
-- payment/webhook flow is verified in Stripe test mode on staging;
-- Admin authentication/session/CSRF review is complete;
-- CSP is as strict as the implementation safely permits;
-- Matrix lifecycle is verified on desktop and mobile;
-- full CI is green;
-- deployment/staging smoke tests pass;
-- external configuration dependencies are documented.
+Non promuovere main né pubblicare pagamenti reali finché rimangono blocchi P0/P1. Nessuna credenziale deve essere inviata in chat o inserita nel repository.
