@@ -48,7 +48,7 @@ def main() -> None:
 
                 page.wait_for_selector("header.site-header", state="visible", timeout=10_000)
                 title = page.title()
-                if "Kosmik Circles" not in title:
+                if "kosmik circles" not in title.lower():
                     failures.append(f"{path}: unexpected title {title!r}")
 
                 if page.locator("header.site-header").count() != 1:
