@@ -15,7 +15,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html admin.html 404.html site.js checkout-fix.js site-fixes.js admin.js admin-ops.js style.css admin.css site.webmanifest robots.txt security.txt; do
+          for f in index.html shop.html cart.html live.html contact.html us.html legal.html admin.html 404.html site.js admin.js style.css admin.css site.webmanifest robots.txt security.txt sitemap.xml; do
             test -f "$f"
           done
 
@@ -24,10 +24,7 @@ jobs:
         run: |
           set -e
           node --check site.js
-          node --check checkout-fix.js
-          node --check site-fixes.js
           node --check admin.js
-          node --check admin-ops.js
 
       - name: Validate Python sources when present
         shell: bash
@@ -80,16 +77,17 @@ jobs:
           fi
           grep -q 'admin.css' admin.html
           grep -q 'admin.js' admin.html
-          grep -q 'admin-ops.js' admin.html
-          for f in index.html shop.html cart.html gallery.html live.html contact.html us.html 404.html; do
-            grep -q 'site-fixes.js' "$f"
-          done
+          if grep -R -nE 'checkout-fix|site-fixes|admin-ops|gallery.html' -- *.html; then
+            echo 'Obsolete public scripts or Gallery route still referenced.'
+            exit 1
+          fi
 
       - name: Browser smoke tests
         shell: bash
         run: |
           set -e
           python -m pip install --disable-pip-version-check playwright
+          python -m playwright install --with-deps chromium
           python backend/server.py >/tmp/kosmik-server.log 2>&1 &
           SERVER_PID=$!
           cleanup() {
@@ -117,3 +115,4 @@ jobs:
             echo 'Environment/database file is tracked by Git.'
             exit 1
           fi
+

@@ -4,3 +4,5 @@ Disallow: /admin.html
 Disallow: /backend/
 Disallow: /api/
 Disallow: /docs/
+Sitemap: https://kosmikcircles.com/sitemap.xml
+

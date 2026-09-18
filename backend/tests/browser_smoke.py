@@ -12,10 +12,10 @@ PAGES = [
     "index.html",
     "shop.html",
     "cart.html",
-    "gallery.html",
     "live.html",
     "contact.html",
     "us.html",
+    "legal.html",
     "404.html",
 ]
 
@@ -63,44 +63,27 @@ def main() -> None:
             except Exception as exc:  # pragma: no cover - failure path for CI diagnostics
                 failures.append(f"{path}: {type(exc).__name__}: {exc}")
 
-        # Functional public flow: shop -> cart. This intentionally stops
-        # before creating an order because the CI database has no sellable
-        # production inventory or payment provider configured.
+        # Functional public flow with no payment credentials: catalogue is
+        # visible, checkout controls are safely unavailable, and the cart is
+        # never converted into a local/demo order.
         try:
             page_errors.clear()
             page.goto(f"{base_url}/shop.html", wait_until="networkidle", timeout=15_000)
-            page.wait_for_selector("[data-shop-products] .add-to-cart", state="visible", timeout=10_000)
+            page.wait_for_selector("[data-shop-products] button[data-product-id]", state="visible", timeout=10_000)
             first_product = page.locator("[data-shop-products] .product").first
             if first_product.count() != 1:
                 failures.append("shop.html: product cards are missing")
-            add_button = first_product.locator(".add-to-cart")
+            add_button = first_product.locator("button[data-product-id]")
             if add_button.count() != 1:
                 failures.append("shop.html: add-to-cart control is missing")
             else:
-                add_button.click()
-                page.wait_for_function(
-                    """() => {
-                        try {
-                            const cart = JSON.parse(localStorage.getItem('kosmik-circles-cart') || '[]');
-                            return Array.isArray(cart) && cart.length === 1 && Number(cart[0].quantity) === 1;
-                        } catch (_) { return false; }
-                    }""",
-                    timeout=5_000,
-                )
-                count = page.locator("[data-cart-count]").first
-                if count.count() != 1 or count.inner_text().strip() != "1":
-                    failures.append("shop.html: cart counter did not update after adding an item")
+                if add_button.is_enabled():
+                    failures.append("shop.html: an unstocked product is purchasable")
 
             page.goto(f"{base_url}/cart.html", wait_until="networkidle", timeout=15_000)
             page.wait_for_selector("[data-cart-content]", state="visible", timeout=10_000)
-            if page.locator("[data-order-form]").count() != 1:
-                failures.append("cart.html: order form is missing")
-            else:
-                for field in ("email", "name", "phone", "address", "city", "postcode", "country"):
-                    if page.locator(f"[data-order-form] [name='{field}']").count() != 1:
-                        failures.append(f"cart.html: order field {field!r} is missing")
-                if page.locator("[data-order-form] button[type='submit']").count() != 1:
-                    failures.append("cart.html: order submit button is missing")
+            if page.locator("[data-cart-content]").count() != 1:
+                failures.append("cart.html: cart container is missing")
             if page_errors:
                 failures.append(f"cart.html checkout flow: page errors: {' | '.join(page_errors)}")
         except Exception as exc:  # pragma: no cover - failure path for CI diagnostics
@@ -119,3 +102,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
