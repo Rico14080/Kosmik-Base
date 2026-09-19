@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: kosmik-circles-staging
+    runtime: python
+    buildCommand: python -m py_compile backend/server.py
+    startCommand: KOSMIK_HOST=0.0.0.0 KOSMIK_PORT=$PORT python backend/server.py
+    healthCheckPath: /api/health
+    autoDeployTrigger: checksPass
+    disk:
+      name: kosmik-v1-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: KOSMIK_COMMERCE_ENABLED
+        value: "0"
+      - key: KOSMIK_DATA_DIR
+        value: /var/data/data
+      - key: KOSMIK_UPLOAD_DIR
+        value: /var/data/uploads

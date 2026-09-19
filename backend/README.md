@@ -30,6 +30,19 @@ Aprire `http://127.0.0.1:8080/`.
 
 I segreti devono essere configurati nell'ambiente del server e mai committati. Il database locale, backup e upload sono esclusi da Git. Per accettare pagamenti reali servono dominio HTTPS, Stripe configurato e webhook verificato. Per le email serve SMTP.
 
+### Staging Render V1
+
+`render.yaml` avvia `python backend/server.py` con `KOSMIK_HOST=0.0.0.0` e la porta assegnata da Render (`KOSMIK_PORT=$PORT`). Il disco persistente è montato in `/var/data`; database e upload usano rispettivamente `/var/data/data` e `/var/data/uploads`.
+
+Nel servizio Render configura solo queste variabili V1:
+
+- `KOSMIK_ADMIN_PASSWORD`: impostala nel dashboard come secret.
+- `PUBLIC_BASE_URL`: URL HTTPS effettivo dello staging, senza slash finale.
+- `KOSMIK_COMMERCE_ENABLED=0`: già definita dal Blueprint; lasciala disattivata.
+- `KOSMIK_DATA_DIR=/var/data/data` e `KOSMIK_UPLOAD_DIR=/var/data/uploads`: già definite dal Blueprint.
+
+Non impostare Stripe o SMTP per questo staging. Il server richiede solo Python standard library; il build command verifica `backend/server.py`.
+
 ## Backup e restore V1
 
 Il backup include uno snapshot SQLite consistente (contenuti CMS, impostazioni, catalogo, ordini e messaggi) e gli upload V1. I backup sono salvati in `$KOSMIK_DATA_DIR/backups`: in produzione `KOSMIK_DATA_DIR` deve quindi essere un percorso persistente e privato, esterno alla root pubblica.
