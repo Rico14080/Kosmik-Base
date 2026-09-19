@@ -96,10 +96,18 @@ DEFAULT_CONTENT = {
         "email": "hello@kosmikcircles.com",
         "instagram": "Instagram",
         "instagramUrl": "",
+        "youtube": "YouTube",
+        "youtubeUrl": "",
         "description": "Kosmik Circles offers live electronic music, audiovisual performances, DJ sets, and sound direction for clubs, festivals, brands, and private spaces. Tell us what you are building and we will shape the frequency with you.",
         "serviceTitleOne": "We create",
         "serviceTitleTwo": "signals.",
         "formIntro": "Start with an email. We answer within 2-3 Earth days."
+    },
+    "images": {
+        "home": {"primary": {"motion": "none"}, "secondary": {"image": "", "alt": "", "motion": "none"}},
+        "live": {"primary": {"image": "", "alt": "", "motion": "none"}, "secondary": {"image": "", "alt": "", "motion": "none"}},
+        "contact": {"primary": {"image": "", "alt": "", "motion": "none"}, "secondary": {"image": "", "alt": "", "motion": "none"}},
+        "shop": {"primary": {"image": "", "alt": "", "motion": "none"}, "secondary": {"image": "", "alt": "", "motion": "none"}}
     },
     "live": [
         {"date":"18.10.24","isoDate":"2024-10-18","location":"Milano, IT","venue":"Magazzini Generali / 23:00","signal":"Circles / 01","detail":"Full live set","action":"Tickets","ticketUrl":"","past":True},
