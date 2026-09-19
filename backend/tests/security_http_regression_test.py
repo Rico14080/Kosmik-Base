@@ -67,21 +67,41 @@ def main() -> None:
         assert status == 404, status
 
         assert "script-src 'self';" in headers.get('Content-Security-Policy','')
+        assert headers.get("Permissions-Policy") == "camera=(), microphone=(), geolocation=()"
         for path in ("/api/admin/orders", "/api/admin/messages", "/api/admin/stats"):
             status, _, body = get(base, path)
             assert status == 401, (path, status, body)
+        assert post(base, "/api/admin/content", b"{}")[0] == 401
 
         status, _, body = post(base, "/api/messages", b"{not-json")
         assert status == 400, (status, body)
 
         status, _, body = post(base, "/api/stripe/webhook", b"{}")
         assert status == 503, (status, body)
+        for path in ("/api/checkout", "/api/checkout/quote"):
+            status, _, body = post(base, path, b"{}")
+            assert status == 503, (path, status, body)
+        with server.db() as c:
+            assert c.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
 
-        for path in ('/backend/server.py','/backend/data/test.sqlite3','/backend/backups/test.zip','/.env','/.git/config','/README.md','/backend/tests/security_http_regression_test.py','/%62ackend/server.py','/backend/%64ata/test.sqlite3','/%2eenv','/../backend/server.py','/%2e%2e/backend/server.py','/%252e%252e/backend/server.py','/backend%5cserver.py','/gallery.html','/api/gallery/albums','/api/admin/gallery/albums'):
+        (server.UPLOADS / "safe.png").write_bytes(b"fixture")
+        assert get(base, "/backend/uploads/safe.png")[0] == 200
+        for path in ('/backend/server.py','/backend/data/test.sqlite3','/backend/backups/test.zip','/.env','/.git/config','/README.md','/backend/tests/security_http_regression_test.py','/%62ackend/server.py','/backend/%64ata/test.sqlite3','/%2eenv','/../backend/server.py','/%2e%2e/backend/server.py','/%252e%252e/backend/server.py','/backend%5cserver.py','/backend/uploads/../data/test.sqlite3','/backend/uploads/%2e%2e/data/test.sqlite3','/backend/uploads/%252e%252e/data/test.sqlite3','/backend/uploads/safe.png%2f..%2fdata/test.sqlite3','/gallery.html','/api/gallery/albums','/api/admin/gallery/albums'):
             for method in ('GET','HEAD'):
                 conn=http.client.HTTPConnection('127.0.0.1',httpd.server_address[1],timeout=5)
                 conn.request(method,path);response=conn.getresponse();assert response.status==404,(method,path,response.status)
                 body=response.read();assert method!='HEAD' or body==b'';conn.close()
+        class RequestContext:
+            client_address = ('127.0.0.1', 0)
+            headers = {'X-Forwarded-For': '203.0.113.2'}
+        previous_proxies = server.TRUSTED_PROXIES
+        try:
+            server.TRUSTED_PROXIES = set()
+            assert server.Handler.client_ip(RequestContext()) == '127.0.0.1'
+            server.TRUSTED_PROXIES = {'127.0.0.1'}
+            assert server.Handler.client_ip(RequestContext()) == '203.0.113.2'
+        finally:
+            server.TRUSTED_PROXIES = previous_proxies
         for payload in (b'[]',b'null',b'"string"',b'123'):
             assert post(base,'/api/messages',payload)[0]==400
         assert post(base,'/api/messages',b'{}','text/plain')[0]==415
