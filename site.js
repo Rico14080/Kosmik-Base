@@ -144,8 +144,9 @@ function initMatrix(){
 }
 document.addEventListener('DOMContentLoaded',async()=>{
   updateCopyrightYear();await fetchContent();
-  if(backendReady){renderPublicContent();renderProducts();renderLinksAndLegal();}
-  else {const warning=document.createElement('p');warning.setAttribute('role','alert');warning.textContent='Server unavailable. Shop and checkout are temporarily disabled; your cart is saved.';document.querySelector('main')?.prepend(warning);document.querySelectorAll('[data-add-to-cart]').forEach(b=>b.disabled=true);}
+  try {if(backendReady){renderPublicContent();renderProducts();renderLinksAndLegal();}
+  else {const warning=document.createElement('p');warning.setAttribute('role','alert');warning.textContent='Server unavailable. Shop and checkout are temporarily disabled; your cart is saved.';document.querySelector('main')?.prepend(warning);document.querySelectorAll('[data-add-to-cart]').forEach(b=>b.disabled=true);}}
+  finally {document.documentElement.classList.remove('content-loading');}
   renderCartPage();updateBagCount();bindImageFallbacks();initMatrix();
   document.querySelectorAll('[data-no-ticket]').forEach(a=>a.addEventListener('click',e=>e.preventDefault()));
   const form=document.querySelector('.contact-form');if(form)form.addEventListener('submit',async e=>{e.preventDefault();const button=form.querySelector('[type=submit]');button.disabled=true;let status=form.querySelector('[role=status]');if(!status){status=document.createElement('p');status.setAttribute('role','status');form.append(status);}try{const result=await publicApi('/messages',Object.fromEntries(new FormData(form)));form.reset();status.textContent=result.delivery==='saved'?'Message saved. Email delivery is not configured; the team will read it in Admin.':'Message received.';}catch(e){status.textContent=e.message;}finally{button.disabled=false;}});
