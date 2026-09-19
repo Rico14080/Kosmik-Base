@@ -68,6 +68,15 @@ def main():
             assert req('/stripe/webhook',{'id':'ignored'})[0]==503
             assert not ok('/admin/orders')['orders']
             assert ok('/config')['commerceEnabled'] is False
+            contact={'name':'Contact test','email':'contact@example.com','message':'Please get in touch.'}
+            server.SMTP_HOST='';server.SMTP_FROM=''
+            code,result,_=req('/messages',contact);assert code==202 and result['delivery']=='saved'
+            with closing(server.db()) as c:
+                assert c.execute('SELECT COUNT(*) FROM messages WHERE email=?',(contact['email'],)).fetchone()[0]==1
+                assert c.execute('SELECT COUNT(*) FROM mail_outbox WHERE id LIKE "MSG-%"').fetchone()[0]==0
+            server.SMTP_HOST='smtp.test';server.SMTP_FROM='noreply@example.com'
+            code,result,_=req('/messages',contact|{'email':'queued@example.com'});assert code==201 and result['delivery']=='queued'
+            with closing(server.db()) as c: assert c.execute('SELECT COUNT(*) FROM mail_outbox WHERE id LIKE "MSG-%"').fetchone()[0]==1
             server.COMMERCE_ENABLED=True
             server.STRIPE_SECRET_KEY='test-placeholder';server.STRIPE_WEBHOOK_SECRET='signed-test';server.PUBLIC_BASE_URL='https://example.com';server.stripe_request=fake_stripe
             assert req('/checkout',payload)[0]==409 # no shipping price invented
@@ -104,7 +113,7 @@ def main():
             order=ok('/admin/orders')['orders'][0];assert order['shipping_status']=='SHIPPED' and order['payment_status']=='PAID' and order['address']=='Test street'
             with closing(server.db()) as c:
                 assert c.execute('SELECT stock,reserved_stock FROM products WHERE id=?',(pid,)).fetchone()[:]==(9,0)
-                assert c.execute('SELECT COUNT(*) FROM mail_outbox').fetchone()[0]==2
+                assert c.execute('SELECT COUNT(*) FROM mail_outbox').fetchone()[0]==3
             refund={'id':'refund-1','type':'charge.refunded','data':{'object':{'payment_intent':'pi_test','refunded':True,'amount_refunded':1250}}}
             assert webhook(refund)[0]==200 and ok('/admin/orders')['orders'][0]['payment_status']=='REFUNDED'
             # Variant inventory is independent, with stable identifiers and stock zero unavailable.
@@ -131,6 +140,11 @@ def main():
             assert (root/'restored/uploads/test.png').read_bytes()==b'asset fixture'
             import sqlite3
             with closing(sqlite3.connect(root/'restored/data/kosmik.db')) as c: assert c.execute('SELECT COUNT(*) FROM orders').fetchone()[0]==2
+            try:
+                restore_backup(archive,root/'restored')
+                raise AssertionError('Restore must not overwrite an existing destination')
+            except ValueError as error:
+                assert 'must be empty' in str(error)
             ok('/admin/logout',{});assert req('/admin/orders')[0]==401
             print('CHECKOUT / CMS / ADMIN / SHIPPING / VARIANTS / WEBHOOK / BACKUP API PASS')
         finally: httpd.shutdown();httpd.server_close()

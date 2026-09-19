@@ -858,8 +858,10 @@ class Handler(SimpleHTTPRequestHandler):
             mid='MSG-'+secrets.token_hex(8)
             with closing(db()) as c,c:
                 c.execute('INSERT INTO messages(id,name,email,message,created_at) VALUES(?,?,?,?,?)',(mid,name,email,message,now()))
-                settings,_=settings_from_db(c);queue_mail(c,mid,settings['businessEmail'],'KOSMIK contact message',name+'\n'+email+'\n'+message)
-            return send(self,201,{'ok':True})
+                settings,_=settings_from_db(c)
+                if SMTP_HOST and SMTP_FROM:
+                    queue_mail(c,mid,settings['businessEmail'],'KOSMIK contact message',name+'\n'+email+'\n'+message)
+            return send(self,201 if SMTP_HOST and SMTP_FROM else 202,{'ok':True,'delivery':'queued' if SMTP_HOST and SMTP_FROM else 'saved'})
         if path.startswith('/api/admin/'):
             session=self.guard(True)
             if path=='/api/admin/backup':

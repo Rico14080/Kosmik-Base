@@ -28,5 +28,19 @@ Aprire `http://127.0.0.1:8080/`.
 
 ## Produzione
 
-I segreti devono essere configurati nell'ambiente del server e mai committati. Il database locale, backup e upload sono esclusi da Git. Per accettare pagamenti reali servono dominio HTTPS, Stripe configurato e webhook verificato. Per le email serve SMTP. Il backup si crea dall'Admin oppure con `python backend/backup.py`; il ripristino deve sempre avvenire in una cartella vuota con `python backend/backup.py --restore FILE.zip --destination CARTELLA_VUOTA`.
+I segreti devono essere configurati nell'ambiente del server e mai committati. Il database locale, backup e upload sono esclusi da Git. Per accettare pagamenti reali servono dominio HTTPS, Stripe configurato e webhook verificato. Per le email serve SMTP.
+
+## Backup e restore V1
+
+Il backup include uno snapshot SQLite consistente (contenuti CMS, impostazioni, catalogo, ordini e messaggi) e gli upload V1. I backup sono salvati in `$KOSMIK_DATA_DIR/backups`: in produzione `KOSMIK_DATA_DIR` deve quindi essere un percorso persistente e privato, esterno alla root pubblica.
+
+```bash
+# Crea un archivio ZIP nel percorso privato dei backup
+python backend/backup.py
+
+# Prova un restore senza toccare il sito: la destinazione deve essere nuova o vuota
+python backend/backup.py --restore /var/lib/kosmik/data/backups/kosmik-YYYYMMDD-HHMMSS.zip --destination /tmp/kosmik-restore-smoke
+```
+
+Verifica il database ripristinato e gli upload nella copia temporanea; arresta il sito prima di usare una copia ripristinata come storage attivo. Gallery legacy non fa parte del backup V1.
 
