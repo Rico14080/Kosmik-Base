@@ -75,7 +75,7 @@ def main() -> None:
         assert status == 400, (status, body)
 
         status, _, body = post(base, "/api/stripe/webhook", b"{}")
-        assert status == 400, (status, body)
+        assert status == 503, (status, body)
 
         for path in ('/backend/server.py','/backend/data/test.sqlite3','/backend/backups/test.zip','/.env','/.git/config','/README.md','/backend/tests/security_http_regression_test.py','/%62ackend/server.py','/backend/%64ata/test.sqlite3','/%2eenv','/../backend/server.py','/%2e%2e/backend/server.py','/%252e%252e/backend/server.py','/backend%5cserver.py','/gallery.html','/api/gallery/albums','/api/admin/gallery/albums'):
             for method in ('GET','HEAD'):
@@ -85,10 +85,13 @@ def main() -> None:
         for payload in (b'[]',b'null',b'"string"',b'123'):
             assert post(base,'/api/messages',payload)[0]==400
         assert post(base,'/api/messages',b'{}','text/plain')[0]==415
-        for path in ('/api/messages','/api/stripe/webhook'):
+        for path in ('/api/messages',):
             conn=http.client.HTTPConnection('127.0.0.1',httpd.server_address[1],timeout=5)
             conn.request('POST',path,body=b'',headers={'Content-Length':str(server.MAX_BODY+1),'Content-Type':'application/json'})
             response=conn.getresponse();assert response.status==413;response.read();conn.close()
+        conn=http.client.HTTPConnection('127.0.0.1',httpd.server_address[1],timeout=5)
+        conn.request('POST','/api/stripe/webhook',body=b'',headers={'Content-Length':str(server.MAX_BODY+1),'Content-Type':'application/json'})
+        response=conn.getresponse();assert response.status==503;response.read();conn.close()
 
         print("SECURITY HTTP REGRESSION TEST PASS")
     finally:

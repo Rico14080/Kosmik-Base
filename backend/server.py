@@ -32,6 +32,7 @@ DB = DATA / 'kosmik.db'
 HOST = os.getenv('KOSMIK_HOST', '127.0.0.1')
 PORT = int(os.getenv('KOSMIK_PORT', '8080'))
 ADMIN_PASSWORD = os.getenv('KOSMIK_ADMIN_PASSWORD', '')
+COMMERCE_ENABLED = os.getenv('KOSMIK_COMMERCE_ENABLED', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
 PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL', '').rstrip('/')
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '').strip()
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '').strip()
@@ -546,7 +547,7 @@ def apply_paid_order(c,oid,session_id=''):
     return True
 
 def payments_enabled():
-    return bool(STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET and urlparse(PUBLIC_BASE_URL).scheme=='https' and urlparse(PUBLIC_BASE_URL).hostname)
+    return bool(COMMERCE_ENABLED and STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET and urlparse(PUBLIC_BASE_URL).scheme=='https' and urlparse(PUBLIC_BASE_URL).hostname)
 
 def stripe_request(method,endpoint,params=None,idempotency_key=None):
     if not STRIPE_SECRET_KEY: raise ApiError('Payment provider is not configured',503)
@@ -590,6 +591,8 @@ def shipping_cost(settings,customer,method,subtotal):
     return 0 if s['freeThresholdCents'] is not None and subtotal>=s['freeThresholdCents'] else zone['priceCents']
 
 def checkout(payload,quote=False):
+    if not COMMERCE_ENABLED:
+        raise ApiError('Commerce is currently unavailable. Shop coming soon; your cart is retained.',503)
     customer,email,method=validate_customer(payload)
     if not quote and not payments_enabled(): raise ApiError('Checkout is unavailable until payment configuration is complete. Your cart is retained.',503)
     key=payload.get('requestKey','')
@@ -659,7 +662,7 @@ def maintenance():
     while True:
         try:
             flush_mail()
-            if STRIPE_SECRET_KEY:
+            if COMMERCE_ENABLED and STRIPE_SECRET_KEY:
                 with closing(db()) as c: rows=c.execute("SELECT * FROM orders WHERE payment_status='PENDING' AND stripe_session_id IS NOT NULL AND reservation_expires_at<? LIMIT 10",(now(),)).fetchall()
                 for row in rows:
                     session=stripe_request('GET','checkout/sessions/'+row['stripe_session_id'])
@@ -785,7 +788,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return send(self,200,{'ok':True,'version':API_VERSION})
             if path=='/api/config':
                 with closing(db()) as c: settings,_=settings_from_db(c)
-                return send(self,200,{'paymentsEnabled':payments_enabled(),'paymentProvider':'stripe' if payments_enabled() else None,'shipping':settings['shipping'],'links':settings['links'],'businessEmail':settings['businessEmail']})
+                return send(self,200,{'commerceEnabled':COMMERCE_ENABLED,'paymentsEnabled':payments_enabled(),'paymentProvider':'stripe' if payments_enabled() else None,'shipping':settings['shipping'],'links':settings['links'],'businessEmail':settings['businessEmail']})
             if path=='/api/content':
                 with closing(db()) as c:
                     content=content_from_db(c);content['shop']=catalog(c);content['live']=[e for e in content.get('live',[]) if e.get('visible',True)]
@@ -814,6 +817,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return send(self,200,result)
             raise ApiError('Not found',404)
         if path=='/api/stripe/webhook':
+            if not COMMERCE_ENABLED:
+                raise ApiError('Commerce is currently unavailable.',503)
             raw=self.raw_body()
             if not verify_stripe_signature(raw,self.headers.get('Stripe-Signature','')): raise ApiError('Invalid signature',400)
             try: event=json.loads(raw)

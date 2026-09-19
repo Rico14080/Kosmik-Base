@@ -69,16 +69,11 @@ def main() -> None:
         try:
             page_errors.clear()
             page.goto(f"{base_url}/shop.html", wait_until="networkidle", timeout=15_000)
-            page.wait_for_selector("[data-shop-products] button[data-product-id]", state="visible", timeout=10_000)
-            first_product = page.locator("[data-shop-products] .product").first
-            if first_product.count() != 1:
-                failures.append("shop.html: product cards are missing")
-            add_button = first_product.locator("button[data-product-id]")
-            if add_button.count() != 1:
-                failures.append("shop.html: add-to-cart control is missing")
-            else:
-                if add_button.is_enabled():
-                    failures.append("shop.html: an unstocked product is purchasable")
+            page.wait_for_selector("[data-shop-products]", state="visible", timeout=10_000)
+            if "COMING SOON" not in page.locator("[data-shop-products]").inner_text():
+                failures.append("shop.html: Coming Soon state is missing")
+            if page.locator("[data-shop-products] button[data-product-id]").count() != 0:
+                failures.append("shop.html: purchase controls are visible while commerce is disabled")
 
             page.goto(f"{base_url}/cart.html", wait_until="networkidle", timeout=15_000)
             page.wait_for_selector("[data-cart-content]", state="visible", timeout=10_000)

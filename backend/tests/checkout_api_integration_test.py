@@ -18,7 +18,7 @@ from backup import create_backup,restore_backup
 
 def main():
     with tempfile.TemporaryDirectory() as tmp:
-        root=Path(tmp);server.DATA=root/'data';server.UPLOADS=root/'uploads';server.DB=server.DATA/'test.db';server.ADMIN_PASSWORD='test-only-password'
+        root=Path(tmp);server.DATA=root/'data';server.UPLOADS=root/'uploads';server.DB=server.DATA/'test.db';server.ADMIN_PASSWORD='test-only-password';server.COMMERCE_ENABLED=False
         server.init_db()
         httpd=server.ThreadingHTTPServer(('127.0.0.1',0),server.Handler)
         threading.Thread(target=httpd.serve_forever,daemon=True).start()
@@ -64,7 +64,11 @@ def main():
             assert next(p for p in ok('/admin/products')['products'] if p['id']==pid)['stock']==10
             payload={'requestKey':'a'*24,'email':'buyer@example.com','customer':{'name':'Buyer','address':'Test street','city':'Roma','postcode':'00100','country':'IT','phone':''},'shippingMethod':'shipping','items':[{'productId':pid,'quantity':1,'priceCents':1}]}
             assert req('/checkout',payload)[0]==503
+            assert req('/checkout/quote',payload)[0]==503
+            assert req('/stripe/webhook',{'id':'ignored'})[0]==503
             assert not ok('/admin/orders')['orders']
+            assert ok('/config')['commerceEnabled'] is False
+            server.COMMERCE_ENABLED=True
             server.STRIPE_SECRET_KEY='test-placeholder';server.STRIPE_WEBHOOK_SECRET='signed-test';server.PUBLIC_BASE_URL='https://example.com';server.stripe_request=fake_stripe
             assert req('/checkout',payload)[0]==409 # no shipping price invented
             conf=ok('/admin/settings');settings=conf['settings'];settings['shipping']['zones']=[{'name':'Italy','countries':['IT'],'priceCents':600},{'name':'Europe','countries':['DE','FR'],'priceCents':1200}]
