@@ -86,18 +86,13 @@ DEFAULT_CONTENT = {
         "shop": {"eyebrow": "Available now / Dispatching worldwide", "titleLineOne": "Objects with", "titleLineTwo": "an orbit.", "note": "Four small-batch pieces. No restocks promised."},
         "gallery": {"eyebrow": "Visual archive / Field notes", "titleLineOne": "See the", "titleLineTwo": "signal.", "note": "Fragments from the orbit."},
         "live": {"eyebrow": "Transmission schedule / 2026", "titleLineOne": "Come", "titleLineTwo": "through.", "note": "Night flights, deep rooms, high frequencies."},
-        "contact": {"eyebrow": "Open frequency / hello@kosmikcircles.com", "titleLineOne": "Send a", "titleLineTwo": "signal.", "note": ""},
+        "contact": {"eyebrow": "Open frequency / message channel", "titleLineOne": "Send a", "titleLineTwo": "signal.", "note": ""},
         "cart": {"eyebrow": "Your selected objects", "titleLineOne": "Enter the", "titleLineTwo": "cart.", "note": "Leave your email and send the order signal."}
     },
     "ticker": {"text": "NEW TRANSMISSION SOON ✳ KOSMIK CIRCLES / SMALL BATCH / LIVE AUDIOVISUAL SIGNALS", "speed": 28, "fontSize": 11},
     "matrix": {"speed": 0.45},
     "gallery": [{"image": "", "alt": "", "caption": f"{i:03d} / Empty frequency"} for i in range(1, 6)],
     "contact": {
-        "email": "hello@kosmikcircles.com",
-        "instagram": "Instagram",
-        "instagramUrl": "",
-        "youtube": "YouTube",
-        "youtubeUrl": "",
         "description": "Kosmik Circles offers live electronic music, audiovisual performances, DJ sets, and sound direction for clubs, festivals, brands, and private spaces. Tell us what you are building and we will shape the frequency with you.",
         "serviceTitleOne": "We create",
         "serviceTitleTwo": "signals.",
@@ -156,6 +151,8 @@ def visible_content(content: dict) -> dict:
     result.get('pages',{}).pop('us',None)
     result.get('siteText',{}).get('nav',{}).pop('us',None)
     result.get('siteText',{}).get('footer',{}).pop('usCta',None)
+    for key in ('email','instagram','instagramUrl','youtube','youtubeUrl'):
+        result.get('contact',{}).pop(key,None)
     return result
 
 def now() -> str:
@@ -225,7 +222,6 @@ DEFAULT_CONTENT['pages'].pop('gallery', None)
 DEFAULT_CONTENT['siteText'].pop('gallery', None)
 DEFAULT_CONTENT['siteText']['nav'].pop('gallery', None)
 DEFAULT_CONTENT['siteText']['footer'].pop('galleryCta', None)
-DEFAULT_CONTENT['contact']['email'] = 'gus@kosmikcircles.com'
 DEFAULT_CONTENT['live'] = []
 DEFAULT_CONTENT['legal'] = {'privacy':'', 'terms':'', 'shipping':'', 'returns':''}
 DEFAULT_SETTINGS = {
@@ -376,7 +372,12 @@ def save_content(c, payload):
             seen.add(str(event['id']))
     row=c.execute('SELECT content,version FROM site_content WHERE id=1').fetchone()
     if payload.get('version')!=row['version']: raise ApiError('Content changed elsewhere. Reload before saving.',409)
-    content=json.loads(row['content']);content[section]=value
+    content=json.loads(row['content'])
+    if section=='contact':
+        value=copy.deepcopy(value)
+        for key in ('email','instagram','instagramUrl','youtube','youtubeUrl'):
+            if key in content.get('contact',{}): value[key]=content['contact'][key]
+    content[section]=value
     c.execute('UPDATE site_content SET content=?,version=version+1,updated_at=? WHERE id=1',(json.dumps(content,ensure_ascii=False),now()))
     activity(c,'content.save',section)
     return {'content':visible_content(content),'version':row['version']+1}

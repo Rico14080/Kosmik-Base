@@ -44,11 +44,13 @@ def main():
             with closing(server.db()) as c:
                 stored=json.loads(c.execute('SELECT content FROM site_content WHERE id=1').fetchone()['content'])
                 stored['us']={'legacy':'keep'}
+                stored['contact'].update({'email':'legacy@example.com','instagramUrl':'https://example.com/old','youtubeUrl':'https://example.com/old-video'})
                 c.execute('UPDATE site_content SET content=? WHERE id=1',(json.dumps(stored),))
                 c.commit()
-            content=ok('/admin/content');assert 'us' not in content['content']
+            content=ok('/admin/content');assert 'us' not in content['content'] and not {'email','instagramUrl','youtubeUrl'}&content['content']['contact'].keys()
             with closing(server.db()) as c:
-                assert 'us' in json.loads(c.execute('SELECT content FROM site_content WHERE id=1').fetchone()['content'])
+                raw_content=json.loads(c.execute('SELECT content FROM site_content WHERE id=1').fetchone()['content'])
+                assert 'us' in raw_content and raw_content['contact']['email']=='legacy@example.com'
             original=copy.deepcopy(content['content'])
             home=copy.deepcopy(original['home']);home['groupTitleLineOne']='Edited circle.'
             content=ok('/admin/content',{'section':'home','value':home,'version':content['version']})
@@ -58,6 +60,8 @@ def main():
             for section,value in original.items():
                 result=ok('/admin/content',{'section':section,'value':value,'version':content['version']});content=result
                 assert result['content'][section]==value,section
+            with closing(server.db()) as c:
+                assert json.loads(c.execute('SELECT content FROM site_content WHERE id=1').fetchone()['content'])['contact']['email']=='legacy@example.com'
             changed=copy.deepcopy(original['pages']);changed['shop']['titleLineOne']='Updated heading'
             content=ok('/admin/content',{'section':'pages','value':changed,'version':content['version']})
             assert content['content']['home']==original['home']
@@ -93,8 +97,11 @@ def main():
             server.COMMERCE_ENABLED=True
             server.STRIPE_SECRET_KEY='test-placeholder';server.STRIPE_WEBHOOK_SECRET='signed-test';server.PUBLIC_BASE_URL='https://example.com';server.stripe_request=fake_stripe
             assert req('/checkout',payload)[0]==409 # no shipping price invented
-            conf=ok('/admin/settings');settings=conf['settings'];settings['shipping']['zones']=[{'name':'Italy','countries':['IT'],'priceCents':600},{'name':'Europe','countries':['DE','FR'],'priceCents':1200}]
+            conf=ok('/admin/settings');settings=conf['settings'];settings['businessEmail']='footer@example.com';settings['links']={key:f'https://example.com/{key}' for key in ('soundcloud','youtube','instagram','tiktok','facebook')};settings['shipping']['zones']=[{'name':'Italy','countries':['IT'],'priceCents':600},{'name':'Europe','countries':['DE','FR'],'priceCents':1200}]
             conf=ok('/admin/settings',{'value':settings,'version':conf['version']})
+            public_config=ok('/config');assert public_config['businessEmail']=='footer@example.com' and public_config['links']==settings['links']
+            unsafe=copy.deepcopy(settings);unsafe['links']['youtube']='javascript:alert(1)'
+            assert req('/admin/settings',{'value':unsafe,'version':conf['version']})[0]==400
             assert ok('/checkout/quote',payload)['totalCents']==1850
             international=copy.deepcopy(payload);international['customer']['country']='DE'
             assert ok('/checkout/quote',international)['shippingCents']==1200
