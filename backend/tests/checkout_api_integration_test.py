@@ -41,7 +41,20 @@ def main():
             cookie=headers['Set-Cookie'].split(';')[0];csrf=result['csrfToken']
             assert 'HttpOnly' in headers['Set-Cookie'] and 'SameSite=Strict' in headers['Set-Cookie']
             assert req('/admin/stock',{},headers={'X-CSRF-Token':''})[0]==403
-            content=ok('/admin/content');original=copy.deepcopy(content['content'])
+            with closing(server.db()) as c:
+                stored=json.loads(c.execute('SELECT content FROM site_content WHERE id=1').fetchone()['content'])
+                stored['us']={'legacy':'keep'}
+                c.execute('UPDATE site_content SET content=? WHERE id=1',(json.dumps(stored),))
+                c.commit()
+            content=ok('/admin/content');assert 'us' not in content['content']
+            with closing(server.db()) as c:
+                assert 'us' in json.loads(c.execute('SELECT content FROM site_content WHERE id=1').fetchone()['content'])
+            original=copy.deepcopy(content['content'])
+            home=copy.deepcopy(original['home']);home['groupTitleLineOne']='Edited circle.'
+            content=ok('/admin/content',{'section':'home','value':home,'version':content['version']})
+            assert content['content']['home']['groupTitleLineOne']=='Edited circle.'
+            assert ok('/content')['home']['groupTitleLineOne']=='Edited circle.'
+            original=copy.deepcopy(content['content'])
             for section,value in original.items():
                 result=ok('/admin/content',{'section':section,'value':value,'version':content['version']});content=result
                 assert result['content'][section]==value,section

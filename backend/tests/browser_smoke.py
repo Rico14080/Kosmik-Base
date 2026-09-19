@@ -14,7 +14,6 @@ PAGES = [
     "cart.html",
     "live.html",
     "contact.html",
-    "us.html",
     "legal.html",
     "404.html",
 ]

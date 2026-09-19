@@ -74,14 +74,19 @@ DEFAULT_CONTENT = {
         "introEyebrow": "The short version",
         "introTitleLineOne": "Good things can",
         "introTitleLineTwo": "still feel unknown.",
-        "introDescription": "Kosmik Circles is a design studio making limited-run pieces with a point of view. We work slowly, source carefully, and leave enough room for the weirdness to get in."
+        "introDescription": "Kosmik Circles is a design studio making limited-run pieces with a point of view. We work slowly, source carefully, and leave enough room for the weirdness to get in.",
+        "groupEyebrow": "Who we are",
+        "groupTitleLineOne": "One circle.",
+        "groupTitleLineTwo": "Many signals.",
+        "groupDescription": "Kosmik Circles is an independent collective exploring electronic music, visual experimentation and live experiences. We bring together sound, light and creative practice to build shared spaces, performances and collaborations.",
+        "groupSecondary": "Born from a shared interest in electronic culture, Kosmik Circles moves between DJ sets, audiovisual performance, experimental projects and events.",
+        "groupCta": "Send a signal"
     },
     "pages": {
         "shop": {"eyebrow": "Available now / Dispatching worldwide", "titleLineOne": "Objects with", "titleLineTwo": "an orbit.", "note": "Four small-batch pieces. No restocks promised."},
         "gallery": {"eyebrow": "Visual archive / Field notes", "titleLineOne": "See the", "titleLineTwo": "signal.", "note": "Fragments from the orbit."},
         "live": {"eyebrow": "Transmission schedule / 2026", "titleLineOne": "Come", "titleLineTwo": "through.", "note": "Night flights, deep rooms, high frequencies."},
         "contact": {"eyebrow": "Open frequency / hello@kosmikcircles.com", "titleLineOne": "Send a", "titleLineTwo": "signal.", "note": ""},
-        "us": {"eyebrow": "A very small studio", "titleLineOne": "We make", "titleLineTwo": "signals.", "note": ""},
         "cart": {"eyebrow": "Your selected objects", "titleLineOne": "Enter the", "titleLineTwo": "cart.", "note": "Leave your email and send the order signal."}
     },
     "ticker": {"text": "NEW TRANSMISSION SOON ✳ KOSMIK CIRCLES / SMALL BATCH / LIVE AUDIOVISUAL SIGNALS", "speed": 28, "fontSize": 11},
@@ -108,40 +113,18 @@ DEFAULT_CONTENT = {
         {"name": "Red Planet Mug", "meta": "Stoneware / 330 ml", "description": "Hand-finished ceramic mug made for long nights and slow conversations.", "price": "€ 26", "image": "https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?auto=format&fit=crop&w=900&q=85", "alt": "Ceramic mug on a minimal table", "stock": 0},
         {"name": "Field Notes 001", "meta": "Risograph print / A3", "description": "A numbered studio print mapping our first transmission into the night.", "price": "€ 18", "image": "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=900&q=85", "alt": "Starry night sky above a dark horizon", "stock": 0}
     ],
-    "us": {
-        "sectionNumber": "[ 002 ]",
-        "statement": "There is a lot of noise out there. We like the kind that means something.",
-        "description": "Kosmik Circles started with two friends, a stack of old astronomy books, and a shared belief that everyday things deserve a little mystery. We make products in limited runs, with honest materials, and an unreasonable amount of attention.",
-        "photo": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=85",
-        "photoAlt": "Kosmik Circles studio",
-        "studioLabel": "KC",
-        "soundEyebrow": "The sound / Live frequency",
-        "soundTitleLineOne": "Built for",
-        "soundTitleLineTwo": "the room.",
-        "soundDescription": "Our sound moves between hypnotic low-end, psychedelic textures, and long-form tension. These images are fragments from the places where the signal becomes physical.",
-        "soundImages": [
-            {"image": "https://images.unsplash.com/photo-1524365252-6f0b8f4e8f7a?auto=format&fit=crop&w=1000&q=85", "alt": "DJ performing under red stage lights", "caption": "01 / Low light"},
-            {"image": "/WhatsApp Image 2026-08-11 at 00.52.13 (13).webp", "alt": "Abstract concert lights in a dark room", "caption": "02 / Deep signal"},
-            {"image": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=85", "alt": "Crowd moving beneath concert lights", "caption": "03 / Shared frequency"}
-        ],
-        "valuesEyebrow": "Our coordinates",
-        "valuesTitleLineOne": "Slow things.",
-        "valuesTitleLineTwo": "Strange things.",
-        "valuesTitleLineThree": "Good things.",
-        "valuesDescription": "Designed in Milan. Made with people we know. Packed by hand. Every object has a trace of where it came from."
-    },
     "visuals": {"liveBackgroundImage": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=85"},
     "siteText": {
         "skipToContent": "Skip to content",
         "liveUpdates": "Live updates",
-        "nav": {"home": "Home", "shop": "Shop", "us": "Us", "live": "Live", "gallery": "Gallery", "contact": "Contact", "bag": "Bag", "cart": "Cart"},
+        "nav": {"home": "Home", "shop": "Shop", "live": "Live", "gallery": "Gallery", "contact": "Contact", "bag": "Bag", "cart": "Cart"},
         "home": {"currentlyTransmitting": "Currently transmitting"},
         "shop": {"addToCart": "Add to cart"},
         "gallery": {"emptyImage": "Drop image here"},
         "live": {"date": "Date", "location": "Location", "signal": "Signal", "noTicket": "Tickets"},
         "contact": {"name": "Your name", "email": "Your email", "message": "Your message", "submit": "Transmit"},
         "cart": {"yourName": "Your name", "yourEmail": "Your email", "phone": "Phone", "address": "Address", "city": "City", "postcode": "Postcode", "country": "Country", "sendOrder": "Send order", "remove": "Remove", "empty": "Your cart is orbiting empty.", "sending": "Sending order…", "quantity": "quantity", "total": "Total"},
-        "footer": {"tagline": "Made on Earth, for now", "homeCta": "Say hello", "shopCta": "Say hello", "galleryCta": "Send a signal", "liveCta": "Book a transmission", "usCta": "Say hello", "contactCta": "Browse objects", "cartCta": "Back to shop"}
+        "footer": {"tagline": "Made on Earth, for now", "homeCta": "Say hello", "shopCta": "Say hello", "galleryCta": "Send a signal", "liveCta": "Book a transmission", "contactCta": "Browse objects", "cartCta": "Back to shop"}
     }
 }
 
@@ -158,6 +141,14 @@ def deep_merge(base: object, saved: object) -> object:
 
 def merge_content_defaults(saved: dict | None) -> dict:
     return deep_merge(DEFAULT_CONTENT, saved if isinstance(saved, dict) else {})
+
+def visible_content(content: dict) -> dict:
+    result=copy.deepcopy(content)
+    result.pop('us',None)
+    result.get('pages',{}).pop('us',None)
+    result.get('siteText',{}).get('nav',{}).pop('us',None)
+    result.get('siteText',{}).get('footer',{}).pop('usCta',None)
+    return result
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -325,7 +316,7 @@ def activity(c, action, reference=''):
     c.execute('INSERT INTO activity_log(action,reference,created_at) VALUES(?,?,?)',(action,str(reference)[:200],now()))
 
 def content_from_db(c):
-    return json.loads(c.execute('SELECT content FROM site_content WHERE id=1').fetchone()['content'])
+    return visible_content(json.loads(c.execute('SELECT content FROM site_content WHERE id=1').fetchone()['content']))
 
 def settings_from_db(c):
     row=c.execute('SELECT * FROM settings WHERE id=1').fetchone()
@@ -380,7 +371,7 @@ def save_content(c, payload):
     content=json.loads(row['content']);content[section]=value
     c.execute('UPDATE site_content SET content=?,version=version+1,updated_at=? WHERE id=1',(json.dumps(content,ensure_ascii=False),now()))
     activity(c,'content.save',section)
-    return {'content':content,'version':row['version']+1}
+    return {'content':visible_content(content),'version':row['version']+1}
 
 def save_settings(c,payload):
     current,version=settings_from_db(c)
@@ -692,7 +683,7 @@ def send(handler,status,obj,headers=None):
     handler.end_headers()
     if handler.command!='HEAD': handler.wfile.write(body)
 
-PUBLIC_FILES={'index.html','shop.html','cart.html','live.html','contact.html','us.html','legal.html','admin.html','404.html','site.js','admin.js','style.css','admin.css','site.webmanifest','robots.txt','security.txt','sitemap.xml'}
+PUBLIC_FILES={'index.html','shop.html','cart.html','live.html','contact.html','legal.html','admin.html','404.html','site.js','admin.js','style.css','admin.css','site.webmanifest','robots.txt','security.txt','sitemap.xml'}
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*args,**kwargs): super().__init__(*args,directory=str(ROOT),**kwargs)
@@ -806,7 +797,7 @@ class Handler(SimpleHTTPRequestHandler):
                 with closing(db()) as c:
                     if path=='/api/admin/session': result={'csrfToken':session['csrf']}
                     elif path=='/api/admin/content':
-                        row=c.execute('SELECT * FROM site_content WHERE id=1').fetchone();result={'content':json.loads(row['content']),'version':row['version']}
+                        row=c.execute('SELECT * FROM site_content WHERE id=1').fetchone();result={'content':visible_content(json.loads(row['content'])),'version':row['version']}
                     elif path=='/api/admin/products': result={'products':catalog(c,True),'history':[dict(r) for r in c.execute('SELECT * FROM stock_history ORDER BY id DESC LIMIT 100')]}
                     elif path=='/api/admin/settings':
                         settings,version=settings_from_db(c);result={'settings':settings,'version':version}
