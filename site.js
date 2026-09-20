@@ -4,7 +4,7 @@ const API_BASE = (location.protocol === 'http:' || location.protocol === 'https:
 const defaultContent = {
   home: { eyebrow:'Independent objects / Est. 2024', titleLineOne:'Made for', titleLineTwo:'elsewhere.', intro:'Small-batch goods for people who keep looking up. Wearable signals, useful artifacts, and a little cosmic noise.', cta:'Enter the orbit', heroImage:'https://images.unsplash.com/photo-1534791547706-5c292f749e1b?auto=format&fit=crop&w=1200&q=85', heroAlt:'Orange light cutting through a dark concert atmosphere', signalText:'new objects for old souls', orbitLabelTop:'38° 11′ 52″ N', orbitLabelBottom:'signal / 001', heroIndex:'01 / 04', sectionNumber:'[ 001 ]', signalStripLabel:'Currently transmitting', introEyebrow:'The short version', introTitleLineOne:'Good things can', introTitleLineTwo:'still feel unknown.', introDescription:'Kosmik Circles is a design studio making limited-run pieces with a point of view. We work slowly, source carefully, and leave enough room for the weirdness to get in.' },
   pages: { shop:{eyebrow:'Available now / Dispatching worldwide',titleLineOne:'Objects with',titleLineTwo:'an orbit.',note:'Four small-batch pieces. No restocks promised.'}, live:{eyebrow:'Transmission schedule / 2026',titleLineOne:'Come',titleLineTwo:'through.',note:'Night flights, deep rooms, high frequencies.'}, contact:{eyebrow:'Open frequency / message channel',titleLineOne:'Send a',titleLineTwo:'signal.',note:''}, cart:{eyebrow:'Your selected objects',titleLineOne:'Enter the',titleLineTwo:'cart.',note:'Leave your email and send the order signal.'} },
-  ticker:{text:'NEW TRANSMISSION SOON ✳ KOSMIK CIRCLES / SMALL BATCH / LIVE AUDIOVISUAL SIGNALS',speed:28,fontSize:11}, matrix:{speed:0.45},
+  ticker:{text:'NEW TRANSMISSION SOON ✳ KOSMIK CIRCLES / SMALL BATCH / LIVE AUDIOVISUAL SIGNALS',speed:28,fontSize:11}, matrix:{speed:0.45,fontSize:14},
   contact:{sectionNumber:'[ 003 ]',description:'Kosmik Circles offers live electronic music, audiovisual performances, DJ sets, and sound direction for clubs, festivals, brands, and private spaces. Tell us what you are building and we will shape the frequency with you.',serviceTitleOne:'We create',serviceTitleTwo:'signals.',formIntro:'Start with an email. We answer within 2-3 Earth days.'}, live:[{date:'18.10.24',isoDate:'2024-10-18',location:'Milano, IT',venue:'Magazzini Generali / 23:00',signal:'Circles / 01',detail:'Full live set',action:'Tickets',ticketUrl:'',past:true},{date:'02.11.24',isoDate:'2024-11-02',location:'Berlin, DE',venue:'Ritter Butzke / 00:30',signal:'Night Channel',detail:'2 hour live set',action:'Tickets',ticketUrl:'',past:true},{date:'24.01.25',isoDate:'2025-01-24',location:'Lisboa, PT',venue:'Lux Frágil / 01:00',signal:'Outer Room',detail:'Live + visual show',action:'Tickets',ticketUrl:'',past:true},{date:'31.08.24',isoDate:'2024-08-31',location:'Paris, FR',venue:'La Machine / 23:30',signal:'Soft Landing',detail:'Archive recording',action:'Archive',ticketUrl:'',past:true}], shop:[],
   visuals:{liveBackgroundImage:'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=85'},
   images:{home:{primary:{motion:'none'},secondary:{image:'',alt:'',motion:'none'}},live:{primary:{image:'',alt:'',motion:'none'},secondary:{image:'',alt:'',motion:'none'}},contact:{primary:{image:'',alt:'',motion:'none'},secondary:{image:'',alt:'',motion:'none'}},shop:{primary:{image:'',alt:'',motion:'none'},secondary:{image:'',alt:'',motion:'none'}}},
@@ -14,7 +14,7 @@ let remoteContent = null;
 let backendReady=false,siteConfig={};
 Object.assign(defaultContent.home,{groupEyebrow:'Who we are',groupTitleLineOne:'One circle.',groupTitleLineTwo:'Many signals.',groupDescription:'Kosmik Circles is an independent collective exploring electronic music, visual experimentation and live experiences. We bring together sound, light and creative practice to build shared spaces, performances and collaborations.',groupSecondary:'Born from a shared interest in electronic culture, Kosmik Circles moves between DJ sets, audiovisual performance, experimental projects and events.',groupCta:'Send a signal'});
 function deepMerge(base,saved){if(Array.isArray(base))return Array.isArray(saved)?saved:JSON.parse(JSON.stringify(base));if(base&&typeof base==='object'){const out={...base};if(saved&&typeof saved==='object'&&!Array.isArray(saved))for(const k of Object.keys(saved))out[k]=k in out?deepMerge(out[k],saved[k]):saved[k];return out;}return saved===undefined?base:saved;}
-function mergeContent(saved){const content=deepMerge(defaultContent,saved||{});delete content.us;delete content.pages?.us;delete content.siteText?.nav?.us;delete content.siteText?.footer?.usCta;return content}
+function mergeContent(saved){return deepMerge(defaultContent,saved||{})}
 function getContent(){return remoteContent||defaultContent}
 async function fetchContent(){try{const [content,config]=await Promise.all([publicApi('/content'),publicApi('/config')]);remoteContent=mergeContent(content);siteConfig=config;backendReady=true;}catch{backendReady=false;}return getContent()}
 function isSafeUrl(v='',opts={}){const raw=String(v).trim();if(!raw||raw.startsWith('//')||raw.includes('\\'))return false;try{const u=new URL(raw,location.href);return u.protocol==='https:'||(u.origin===location.origin&&u.protocol===location.protocol)||(opts.allowMailto&&u.protocol==='mailto:')}catch{return false}}
@@ -49,9 +49,16 @@ function renderPublicContent(){const c=getContent(), text=c.siteText||defaultCon
   document.querySelectorAll('[data-footer-tagline]').forEach(e=>e.textContent=text.footer.tagline);const path=(location.pathname||'').toLowerCase();let footerKey=path.endsWith('shop.html')?'shopCta':path.endsWith('live.html')?'liveCta':path.endsWith('contact.html')?'contactCta':path.endsWith('cart.html')?'cartCta':'homeCta';document.querySelectorAll('.site-footer > a').forEach(e=>e.childNodes[0].textContent=(text.footer[footerKey]||e.textContent.replace(' ↗',''))+' ');
 }
 
+function renderHomeBackground(){
+  const hero=document.querySelector('.home-hero');if(!hero)return;
+  const url=safeImageUrl(getContent().home?.heroImage);hero.classList.remove('has-background');hero.style.removeProperty('--home-background-image');
+  if(!url)return;
+  hero.style.setProperty('--home-background-image',cssUrl(url));hero.classList.add('has-background');
+}
+
 function renderPageImages(){
   const content=getContent(), images=content.images||{};
-  document.querySelectorAll('.orbit-art').forEach(media=>{const motion=['none','zoom','drift','reveal'].includes(images.home?.primary?.motion)?images.home.primary.motion:'none';media.className=media.className.replace(/\bmotion-\w+\b/g,'').trim();if(motion!=='none')media.classList.add(`motion-${motion}`);});
+  document.querySelectorAll('.home-hero').forEach(media=>{const motion=['none','zoom','drift','reveal'].includes(images.home?.primary?.motion)?images.home.primary.motion:'none';media.className=media.className.replace(/\bmotion-\w+\b/g,'').trim();if(motion!=='none')media.classList.add(`motion-${motion}`);});
   document.querySelectorAll('[data-page-image]').forEach(img=>{
     const [page,slot]=img.dataset.pageImage.split('-'), item=page==='home'&&slot==='primary'?{image:content.home?.heroImage,alt:content.home?.heroAlt,motion:images.home?.primary?.motion}:images[page]?.[slot]||{};
     const media=img.closest('[data-page-media]'), url=safeImageUrl(item.image), motion=['none','zoom','drift','reveal'].includes(item.motion)?item.motion:'none';
@@ -146,14 +153,15 @@ function renderLinksAndLegal(){
 function initMatrix(){
   if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)return;
   const canvas=document.createElement('canvas');canvas.id='matrix-background';canvas.setAttribute('aria-hidden','true');document.body.prepend(canvas);
-  const context=canvas.getContext('2d');let drops=[],raf=0,last=0;
-  function resize(){canvas.width=innerWidth;canvas.height=innerHeight;drops=Array.from({length:Math.min(120,Math.ceil(innerWidth/20))},()=>Math.random()*-40)}
-  function draw(ts){if(document.hidden){raf=0;return;}if(ts-last>33){last=ts;context.fillStyle='rgba(9,9,9,.12)';context.fillRect(0,0,canvas.width,canvas.height);context.font='14px monospace';drops.forEach((y,i)=>{context.fillStyle=i%7===0?'rgba(255,90,31,.72)':'rgba(93,255,142,.42)';context.fillText('KOSMIKCIRCLES01'[Math.floor(Math.random()*14)],i*20,y*20);drops[i]=y*20>canvas.height&&Math.random()>.975?0:y+Math.max(.05,Number(getContent().matrix?.speed)||.45)});}raf=requestAnimationFrame(draw)}
+  const context=canvas.getContext('2d');let drops=[],raf=0,last=0,cell=20;
+  function fontSize(){const value=Number(getContent().matrix?.fontSize);return Number.isFinite(value)?Math.min(32,Math.max(8,value)):14}
+  function resize(){const size=fontSize();cell=Math.ceil(size*1.4);canvas.width=innerWidth;canvas.height=innerHeight;drops=Array.from({length:Math.min(240,Math.ceil(innerWidth/cell))},()=>Math.random()*-40)}
+  function draw(ts){if(document.hidden){raf=0;return;}if(ts-last>33){last=ts;const size=fontSize();context.fillStyle='rgba(9,9,9,.12)';context.fillRect(0,0,canvas.width,canvas.height);context.font=`${size}px "Saira Stencil", Arial, sans-serif`;drops.forEach((y,i)=>{context.fillStyle=i%7===0?'rgba(255,90,31,.72)':'rgba(93,255,142,.42)';context.fillText('KOSMIKCIRCLES01'[Math.floor(Math.random()*14)],i*cell,y*cell);drops[i]=y*cell>canvas.height&&Math.random()>.975?0:y+Math.max(.05,Number(getContent().matrix?.speed)||.45)});}raf=requestAnimationFrame(draw)}
   resize();addEventListener('resize',resize,{passive:true});document.addEventListener('visibilitychange',()=>{cancelAnimationFrame(raf);raf=0;if(!document.hidden)raf=requestAnimationFrame(draw)});if(!document.hidden)raf=requestAnimationFrame(draw);
 }
 document.addEventListener('DOMContentLoaded',async()=>{
   updateCopyrightYear();await fetchContent();
-  try {if(backendReady){renderPublicContent();renderPageImages();renderProducts();renderLinksAndLegal();}
+  try {if(backendReady){renderPublicContent();renderHomeBackground();renderPageImages();renderProducts();renderLinksAndLegal();}
   else {const warning=document.createElement('p');warning.setAttribute('role','alert');warning.textContent='Server unavailable. Shop and checkout are temporarily disabled; your cart is saved.';document.querySelector('main')?.prepend(warning);document.querySelectorAll('[data-add-to-cart]').forEach(b=>b.disabled=true);}}
   finally {document.documentElement.classList.remove('content-loading');}
   renderCartPage();updateBagCount();bindImageFallbacks();initMatrix();
