@@ -43,19 +43,25 @@ def main():
             assert req('/admin/stock',{},headers={'X-CSRF-Token':''})[0]==403
             with closing(server.db()) as c:
                 stored=json.loads(c.execute('SELECT content FROM site_content WHERE id=1').fetchone()['content'])
-                stored['us']={'legacy':'keep'}
+                stored['retired_section']={'legacy':'keep'}
                 stored['contact'].update({'email':'legacy@example.com','instagramUrl':'https://example.com/old','youtubeUrl':'https://example.com/old-video'})
                 c.execute('UPDATE site_content SET content=? WHERE id=1',(json.dumps(stored),))
                 c.commit()
-            content=ok('/admin/content');assert 'us' not in content['content'] and not {'email','instagramUrl','youtubeUrl'}&content['content']['contact'].keys()
+            content=ok('/admin/content');assert 'retired_section' not in content['content'] and not {'email','instagramUrl','youtubeUrl'}&content['content']['contact'].keys()
             with closing(server.db()) as c:
                 raw_content=json.loads(c.execute('SELECT content FROM site_content WHERE id=1').fetchone()['content'])
-                assert 'us' in raw_content and raw_content['contact']['email']=='legacy@example.com'
+                assert 'retired_section' in raw_content and raw_content['contact']['email']=='legacy@example.com'
             original=copy.deepcopy(content['content'])
             home=copy.deepcopy(original['home']);home['groupTitleLineOne']='Edited circle.'
             content=ok('/admin/content',{'section':'home','value':home,'version':content['version']})
             assert content['content']['home']['groupTitleLineOne']=='Edited circle.'
             assert ok('/content')['home']['groupTitleLineOne']=='Edited circle.'
+            matrix=copy.deepcopy(content['content']['matrix']);matrix['fontSize']=99
+            content=ok('/admin/content',{'section':'matrix','value':matrix,'version':content['version']})
+            assert content['content']['matrix']['fontSize']==32
+            matrix['fontSize']='invalid'
+            content=ok('/admin/content',{'section':'matrix','value':matrix,'version':content['version']})
+            assert content['content']['matrix']['fontSize']==14
             original=copy.deepcopy(content['content'])
             for section,value in original.items():
                 result=ok('/admin/content',{'section':section,'value':value,'version':content['version']});content=result
