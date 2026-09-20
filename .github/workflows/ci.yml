@@ -15,7 +15,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          for f in index.html shop.html cart.html live.html contact.html us.html legal.html admin.html 404.html site.js admin.js style.css admin.css site.webmanifest robots.txt security.txt sitemap.xml; do
+          for f in index.html shop.html cart.html live.html contact.html legal.html admin.html 404.html site.js admin.js style.css admin.css site.webmanifest robots.txt security.txt sitemap.xml; do
             test -f "$f"
           done
 
