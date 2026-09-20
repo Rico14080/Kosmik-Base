@@ -90,7 +90,7 @@ DEFAULT_CONTENT = {
         "cart": {"eyebrow": "Your selected objects", "titleLineOne": "Enter the", "titleLineTwo": "cart.", "note": "Leave your email and send the order signal."}
     },
     "ticker": {"text": "NEW TRANSMISSION SOON ✳ KOSMIK CIRCLES / SMALL BATCH / LIVE AUDIOVISUAL SIGNALS", "speed": 28, "fontSize": 11},
-    "matrix": {"speed": 0.45},
+    "matrix": {"speed": 0.45, "fontSize": 14},
     "gallery": [{"image": "", "alt": "", "caption": f"{i:03d} / Empty frequency"} for i in range(1, 6)],
     "contact": {
         "description": "Kosmik Circles offers live electronic music, audiovisual performances, DJ sets, and sound direction for clubs, festivals, brands, and private spaces. Tell us what you are building and we will shape the frequency with you.",
@@ -145,15 +145,18 @@ def deep_merge(base: object, saved: object) -> object:
 def merge_content_defaults(saved: dict | None) -> dict:
     return deep_merge(DEFAULT_CONTENT, saved if isinstance(saved, dict) else {})
 
+def supported_content(default: object, value: object) -> object:
+    if isinstance(default, dict):
+        source=value if isinstance(value, dict) else {}
+        return {key:supported_content(item,source.get(key)) for key,item in default.items()}
+    if isinstance(default, list):
+        return copy.deepcopy(value) if isinstance(value, list) else copy.deepcopy(default)
+    if isinstance(default,(int,float)) and not isinstance(default,bool):
+        return copy.deepcopy(value) if isinstance(value,(int,float)) and not isinstance(value,bool) else copy.deepcopy(default)
+    return copy.deepcopy(value) if value is not None and type(value) is type(default) else copy.deepcopy(default)
+
 def visible_content(content: dict) -> dict:
-    result=copy.deepcopy(content)
-    result.pop('us',None)
-    result.get('pages',{}).pop('us',None)
-    result.get('siteText',{}).get('nav',{}).pop('us',None)
-    result.get('siteText',{}).get('footer',{}).pop('usCta',None)
-    for key in ('email','instagram','instagramUrl','youtube','youtubeUrl'):
-        result.get('contact',{}).pop(key,None)
-    return result
+    return supported_content(DEFAULT_CONTENT,content)
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -355,6 +358,12 @@ def save_content(c, payload):
     if section not in DEFAULT_CONTENT: raise ApiError('Unknown content section')
     value=payload.get('value')
     if type(value) is not type(DEFAULT_CONTENT[section]): raise ApiError('Invalid section type')
+    if section=='matrix':
+        value=copy.deepcopy(value)
+        try: font_size=float(value.get('fontSize',14))
+        except (TypeError,ValueError): font_size=14
+        if not (font_size==font_size and abs(font_size)!=float('inf')): font_size=14
+        value['fontSize']=int(round(min(32,max(8,font_size))))
     validate_tree(value)
     if section=='live':
         seen=set()
