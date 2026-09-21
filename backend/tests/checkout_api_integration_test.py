@@ -77,6 +77,22 @@ def main():
             assert ok('/content')['live']==[event]
             content=ok('/admin/content',{'section':'live','value':ok('/content')['live'],'version':content['version']})
             assert content['content']['live']==[event]
+            showcase=ok('/admin/content')['showcase'];assert len(showcase)>=2
+            first,second=showcase[:2]
+            edited=[second|{'title':'Second signal','description':'Second description','alt':''},first|{'title':'First signal','description':'First description','image':'https://example.com/first.webp','alt':'First object'}]
+            saved=ok('/admin/showcase',{'items':edited})['items']
+            assert [item['title'] for item in saved]==['Second signal','First signal']
+            public_shop=ok('/content')['shop'];assert [item['title'] for item in public_shop]==['Second signal','First signal']
+            assert public_shop[0]['alt']=='' and public_shop[1]['alt']=='First object'
+            assert not {'price','priceCents','sku','stock','availableStock','variants'}&public_shop[0].keys()
+            added=ok('/admin/showcase',{'items':saved+[{'title':'New object','description':'New description','image':'','alt':''}]})['items']
+            assert [item['title'] for item in added]==['Second signal','First signal','New object']
+            removed=ok('/admin/showcase',{'items':[added[2],added[0]]})['items']
+            assert [item['title'] for item in removed]==['New object','Second signal']
+            assert [item['title'] for item in ok('/content')['shop']]==['New object','Second signal']
+            assert ok('/admin/content')['showcase']==removed
+            assert ok('/admin/showcase',{'items':[]})['items']==[] and ok('/content')['shop']==[]
+            ok('/admin/showcase',{'items':removed})
             product={'name':'API Product','sku':'API-1','priceCents':1250,'meta':'','description':'','image':'','alt':'','active':True,'variants':[]}
             pid=ok('/admin/products',product)['id']
             ok('/admin/stock',{'productId':pid,'delta':10,'reason':'test receipt'})
@@ -90,7 +106,8 @@ def main():
             assert req('/checkout/quote',payload)[0]==503
             assert req('/stripe/webhook',{'id':'ignored'})[0]==503
             assert not ok('/admin/orders')['orders']
-            assert ok('/config')['commerceEnabled'] is False
+            public_config=ok('/config');assert public_config['commerceEnabled'] is False
+            assert not {'paymentsEnabled','paymentProvider','shipping'}&public_config.keys()
             contact={'name':'Contact test','email':'contact@example.com','message':'Please get in touch.'}
             server.SMTP_HOST='';server.SMTP_FROM=''
             code,result,_=req('/messages',contact);assert code==202 and result['delivery']=='saved'

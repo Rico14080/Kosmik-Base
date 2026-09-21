@@ -62,17 +62,29 @@ def main() -> None:
             except Exception as exc:  # pragma: no cover - failure path for CI diagnostics
                 failures.append(f"{path}: {type(exc).__name__}: {exc}")
 
-        # Functional public flow with no payment credentials: catalogue is
-        # visible, checkout controls are safely unavailable, and the cart is
-        # never converted into a local/demo order.
+        # Commerce-off contract: the Shop is an informational showcase only.
         try:
             page_errors.clear()
             page.goto(f"{base_url}/shop.html", wait_until="networkidle", timeout=15_000)
             page.wait_for_selector("[data-shop-products]", state="visible", timeout=10_000)
-            if "COMING SOON" not in page.locator("[data-shop-products]").inner_text():
-                failures.append("shop.html: Coming Soon state is missing")
-            if page.locator("[data-shop-products] button[data-product-id]").count() != 0:
-                failures.append("shop.html: purchase controls are visible while commerce is disabled")
+            cards = page.locator(".shop-showcase-card")
+            if cards.count() < 1:
+                failures.append("shop.html: showcase items are missing")
+            if cards.locator("img").count() < 1 or cards.locator("h2").count() != cards.count() or cards.locator(".shop-showcase-copy p").count() != cards.count():
+                failures.append("shop.html: image/title/description structure is incomplete")
+            if cards.locator("img[alt='']").count():
+                failures.append("shop.html: showcase image ALT fallback is missing")
+            purchase_selectors = "[data-shop-products] a, [data-shop-products] button, [data-shop-products] input, [data-shop-products] select, header a[href*='cart'], footer a[href*='cart']"
+            if page.locator(purchase_selectors).count():
+                failures.append("shop.html: interactive purchase path exists while commerce is disabled")
+            shop_text = page.locator("body").inner_text().lower()
+            for forbidden in ("add to cart", "buy now", "checkout", "stripe", "shipping", "quantity", "sold out", "€"):
+                if forbidden in shop_text:
+                    failures.append(f"shop.html: purchase text is exposed: {forbidden}")
+            for width in (1024, 768, 390):
+                page.set_viewport_size({"width": width, "height": 900})
+                if page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth"):
+                    failures.append(f"shop.html: horizontal overflow at {width}px")
 
             page.goto(f"{base_url}/cart.html", wait_until="networkidle", timeout=15_000)
             page.wait_for_selector("[data-cart-content]", state="visible", timeout=10_000)
@@ -90,7 +102,7 @@ def main() -> None:
 
     print(
         f"Browser smoke PASS: {len(PAGES)} public pages served, initialized without page errors, "
-        "and shop -> cart flow verified."
+        "and commerce-off Shop showcase verified."
     )
 
 
