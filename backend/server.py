@@ -83,7 +83,7 @@ DEFAULT_CONTENT = {
         "groupCta": "Send a signal"
     },
     "pages": {
-        "shop": {"eyebrow": "Available now / Dispatching worldwide", "titleLineOne": "Objects with", "titleLineTwo": "an orbit.", "note": "Four small-batch pieces. No restocks promised."},
+        "shop": {"eyebrow": "Kosmik objects / Visual catalogue", "titleLineOne": "Objects with", "titleLineTwo": "an orbit.", "note": "Selected objects from the Kosmik signal."},
         "gallery": {"eyebrow": "Visual archive / Field notes", "titleLineOne": "See the", "titleLineTwo": "signal.", "note": "Fragments from the orbit."},
         "live": {"eyebrow": "Transmission schedule / 2026", "titleLineOne": "Come", "titleLineTwo": "through.", "note": "Night flights, deep rooms, high frequencies."},
         "contact": {"eyebrow": "Open frequency / message channel", "titleLineOne": "Send a", "titleLineTwo": "signal.", "note": ""},
@@ -288,7 +288,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS webhook_events(id TEXT PRIMARY KEY,type TEXT NOT NULL,created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS mail_outbox(id TEXT PRIMARY KEY,recipient TEXT NOT NULL,subject TEXT NOT NULL,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL);
         ''')
-        add_columns(c,'products',{'reserved_stock':'INTEGER NOT NULL DEFAULT 0','sku':'TEXT','version':'INTEGER NOT NULL DEFAULT 1'})
+        add_columns(c,'products',{'reserved_stock':'INTEGER NOT NULL DEFAULT 0','sku':'TEXT','version':'INTEGER NOT NULL DEFAULT 1','showcase_order':'INTEGER NOT NULL DEFAULT 0'})
         add_columns(c,'site_content',{'version':'INTEGER NOT NULL DEFAULT 1'})
         add_columns(c,'sessions',{'csrf':'TEXT'})
         add_columns(c,'orders',{'stripe_session_id':'TEXT','stock_applied':'INTEGER NOT NULL DEFAULT 0','stock_reserved':'INTEGER NOT NULL DEFAULT 0','reservation_expires_at':'TEXT','status_token':'TEXT','payment_intent':'TEXT','checkout_url':'TEXT','request_key':'TEXT','request_hash':'TEXT','shipping_method':"TEXT NOT NULL DEFAULT 'shipping'",'shipping_cents':'INTEGER NOT NULL DEFAULT 0','tracking':"TEXT NOT NULL DEFAULT ''",'notes':"TEXT NOT NULL DEFAULT ''",'issue':"TEXT NOT NULL DEFAULT ''",'refund_id':'TEXT'})
@@ -310,11 +310,14 @@ def init_db():
         content.get('siteText',{}).get('nav',{}).pop('gallery',None)
         content.get('siteText',{}).get('footer',{}).pop('galleryCta',None)
         if content.get('contact',{}).get('email')=='hello@kosmikcircles.com': content['contact']['email']='gus@kosmikcircles.com'
+        legacy_shop={'eyebrow':'Available now / Dispatching worldwide','titleLineOne':'Objects with','titleLineTwo':'an orbit.','note':'Four small-batch pieces. No restocks promised.'}
+        if content.get('pages',{}).get('shop')==legacy_shop: content['pages']['shop']=copy.deepcopy(DEFAULT_CONTENT['pages']['shop'])
         if saved: c.execute('UPDATE site_content SET content=? WHERE id=1',(json.dumps(content,ensure_ascii=False),))
         else: c.execute('INSERT INTO site_content(id,content,updated_at) VALUES(1,?,?)',(json.dumps(content,ensure_ascii=False),now()))
         if not c.execute('SELECT id FROM products LIMIT 1').fetchone():
             for i,p in enumerate(SEED_PRODUCTS):
                 c.execute('INSERT INTO products(name,sku,meta,description,price_cents,image,alt,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',(p['name'],f'KC-{i+1}',p['meta'],p['description'],price_cents(p['price']),p['image'],p['alt'],now(),now()))
+        c.execute('UPDATE products SET showcase_order=id WHERE showcase_order=0')
         c.execute('INSERT OR IGNORE INTO settings(id,content) VALUES(1,?)',(json.dumps(DEFAULT_SETTINGS),))
         # A process that died during SMTP may already have delivered: require operator review.
         c.execute("UPDATE mail_outbox SET state='uncertain' WHERE state='sending'")
@@ -331,13 +334,51 @@ def settings_from_db(c):
 
 def catalog(c, admin=False):
     result=[]
-    for row in c.execute('SELECT * FROM products '+('' if admin else 'WHERE active=1 ')+'ORDER BY id'):
+    for row in c.execute('SELECT * FROM products '+('' if admin else 'WHERE active=1 ')+'ORDER BY showcase_order,id'):
         p=dict(row)
         p.update(priceCents=p['price_cents'],price=f"€ {p['price_cents']/100:.2f}",availableStock=max(0,p['stock']-p['reserved_stock']))
         p['variants']=[dict(v) | {'availableStock':max(0,v['stock']-v['reserved_stock'])} for v in c.execute('SELECT * FROM variants WHERE product_id=? '+('' if admin else 'AND active=1 ')+'ORDER BY id',(p['id'],))]
         p['hasVariants']=bool(c.execute('SELECT 1 FROM variants WHERE product_id=? LIMIT 1',(p['id'],)).fetchone())
         result.append(p)
     return result
+
+def showcase(c):
+    return [{'id':row['id'],'title':row['name'],'description':row['description'] or '',
+             'image':row['image'] or '','alt':row['alt'] or ''}
+            for row in c.execute('SELECT id,name,description,image,alt FROM products WHERE active=1 ORDER BY showcase_order,id')]
+
+def save_showcase(c,payload):
+    items=payload.get('items')
+    if not isinstance(items,list) or len(items)>100: raise ApiError('Invalid showcase items')
+    present=set()
+    for order,item in enumerate(items,1):
+        if not isinstance(item,dict): raise ApiError('Invalid showcase item')
+        title=text(item.get('title'),'title',160,True)
+        description=text(item.get('description',''),'description',5000)
+        image=text(item.get('image',''),'image',4000)
+        alt=text(item.get('alt',''),'image ALT text',300)
+        pid=item.get('id')
+        if pid is not None and (not isinstance(pid,int) or isinstance(pid,bool)): raise ApiError('Invalid showcase item ID')
+        row=c.execute('SELECT * FROM products WHERE id=?',(pid,)).fetchone() if pid else None
+        if pid and not row: raise ApiError('Showcase item not found',404)
+        if not row:
+            row=c.execute('SELECT * FROM products WHERE name=? AND active=0 ORDER BY id LIMIT 1',(title,)).fetchone()
+        if row:
+            pid=row['id']
+            if pid in present: raise ApiError('Duplicate showcase item')
+            duplicate=c.execute('SELECT id FROM products WHERE name=? AND id<>?',(title,pid)).fetchone()
+            if duplicate: raise ApiError('Use a unique product title')
+            c.execute('UPDATE products SET name=?,description=?,image=?,alt=?,active=1,showcase_order=?,updated_at=?,version=version+1 WHERE id=?',(title,description,image,alt,order,now(),pid))
+        else:
+            if c.execute('SELECT id FROM products WHERE name=?',(title,)).fetchone(): raise ApiError('Use a unique product title')
+            sku='SHOWCASE-'+secrets.token_hex(6).upper()
+            pid=c.execute('INSERT INTO products(name,sku,meta,description,price_cents,image,alt,stock,active,showcase_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(title,sku,'',description,0,image,alt,0,1,order,now(),now())).lastrowid
+        present.add(pid)
+    active_ids={row['id'] for row in c.execute('SELECT id FROM products WHERE active=1')}
+    for pid in active_ids-present:
+        c.execute('UPDATE products SET active=0,updated_at=?,version=version+1 WHERE id=?',(now(),pid))
+    activity(c,'showcase.save',len(items))
+    return {'items':showcase(c)}
 
 def validate_tree(value, depth=0):
     if depth>8: raise ApiError('Content nesting too deep')
@@ -797,10 +838,12 @@ class Handler(SimpleHTTPRequestHandler):
                 return send(self,200,{'ok':True,'version':API_VERSION})
             if path=='/api/config':
                 with closing(db()) as c: settings,_=settings_from_db(c)
-                return send(self,200,{'commerceEnabled':COMMERCE_ENABLED,'paymentsEnabled':payments_enabled(),'paymentProvider':'stripe' if payments_enabled() else None,'shipping':settings['shipping'],'links':settings['links'],'businessEmail':settings['businessEmail']})
+                result={'commerceEnabled':COMMERCE_ENABLED,'links':settings['links'],'businessEmail':settings['businessEmail']}
+                if COMMERCE_ENABLED: result.update(paymentsEnabled=payments_enabled(),paymentProvider='stripe' if payments_enabled() else None,shipping=settings['shipping'])
+                return send(self,200,result)
             if path=='/api/content':
                 with closing(db()) as c:
-                    content=content_from_db(c);content['shop']=catalog(c);content['live']=[e for e in content.get('live',[]) if e.get('visible',True)]
+                    content=content_from_db(c);content['shop']=catalog(c) if COMMERCE_ENABLED else showcase(c);content['live']=[e for e in content.get('live',[]) if e.get('visible',True)]
                     settings,_=settings_from_db(c);content['links']=settings['links']
                 return send(self,200,content)
             if path=='/api/orders/status':
@@ -815,7 +858,7 @@ class Handler(SimpleHTTPRequestHandler):
                 with closing(db()) as c:
                     if path=='/api/admin/session': result={'csrfToken':session['csrf']}
                     elif path=='/api/admin/content':
-                        row=c.execute('SELECT * FROM site_content WHERE id=1').fetchone();result={'content':visible_content(json.loads(row['content'])),'version':row['version']}
+                        row=c.execute('SELECT * FROM site_content WHERE id=1').fetchone();result={'content':visible_content(json.loads(row['content'])),'version':row['version'],'showcase':showcase(c)}
                     elif path=='/api/admin/products': result={'products':catalog(c,True),'history':[dict(r) for r in c.execute('SELECT * FROM stock_history ORDER BY id DESC LIMIT 100')]}
                     elif path=='/api/admin/settings':
                         settings,version=settings_from_db(c);result={'settings':settings,'version':version}
@@ -883,6 +926,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if path=='/api/admin/logout':
                     c.execute('DELETE FROM sessions WHERE token=?',(session['token'],));return send(self,200,{'ok':True},{'Set-Cookie':'kosmik_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'})
                 if path=='/api/admin/content': result=save_content(c,data)
+                elif path=='/api/admin/showcase': result=save_showcase(c,data)
                 elif path=='/api/admin/settings': result=save_settings(c,data)
                 elif path=='/api/admin/products': result=save_product(c,data)
                 elif path=='/api/admin/stock': result=adjust_stock(c,data)
