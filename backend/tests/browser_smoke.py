@@ -113,8 +113,10 @@ def main() -> None:
                 failures.append("index.html: primary Home image is not in section 001 left slot")
             if page.locator(".home-group > .home-editorial-slot [data-page-image='home-secondary']").count() != 1:
                 failures.append("index.html: secondary Home image is not in section 002 left slot")
-            if page.locator(".home-hero.has-background, .home-group-copy [data-page-image]").count():
+            if page.locator(".home-group-copy [data-page-image]").count():
                 failures.append("index.html: obsolete or duplicate Home image rendering remains")
+            if page.locator(".home-hero.has-background").count() != 1:
+                failures.append("index.html: Home hero background is missing")
             page.goto(f"{base_url}/shop.html", wait_until="networkidle", timeout=15_000)
             if page.locator(".shop-page .page-heading > .page-heading-info > .heading-note").count() != 1:
                 failures.append("shop.html: editorial description is not in the left hero column")
