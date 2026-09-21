@@ -22,5 +22,9 @@ dialog{max-width:min(520px,92vw);background:var(--paper);color:var(--ink);border
 dialog::backdrop{background:#000a}
 summary{cursor:pointer;min-height:44px}
 .preserve-lines{white-space:pre-wrap}
+.showcase-items{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))}
+.showcase-items fieldset{margin:0}
+.showcase-items .admin-preview{aspect-ratio:4/3;background:rgba(244,241,235,.04);border:1px solid var(--line);border-radius:8px;max-height:none;max-width:100%;object-fit:cover;width:100%}
+.showcase-items .admin-actions{margin-bottom:0}
 @media(max-width:650px){.admin-toolbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.admin-page{padding-left:16px;padding-right:16px}.admin-section,fieldset{padding:12px}.admin-page h1{font-size:38px}}
 
