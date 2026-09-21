@@ -56,6 +56,13 @@ function renderPublicContent(){const c=getContent(), text=c.siteText||defaultCon
   document.querySelectorAll('[data-footer-tagline]').forEach(e=>e.textContent=text.footer.tagline);const path=(location.pathname||'').toLowerCase();let footerKey=path.endsWith('shop.html')?'shopCta':path.endsWith('live.html')?'liveCta':path.endsWith('contact.html')?'contactCta':path.endsWith('cart.html')?'cartCta':'homeCta';document.querySelectorAll('.site-footer > a').forEach(e=>e.childNodes[0].textContent=(text.footer[footerKey]||e.textContent.replace(' ↗',''))+' ');
 }
 
+function renderHomeBackground(){
+  const hero=document.querySelector('.home-hero');if(!hero)return;
+  const url=safeImageUrl(getContent().home?.heroImage);hero.classList.remove('has-background');hero.style.removeProperty('--home-background-image');
+  if(!url)return;
+  hero.style.setProperty('--home-background-image',cssUrl(url));hero.classList.add('has-background');
+}
+
 function renderPageImages(){
   const content=getContent(), images=content.images||{};
   document.querySelectorAll('[data-page-image]').forEach(img=>{
@@ -167,7 +174,7 @@ function initMatrix(){
 document.addEventListener('DOMContentLoaded',async()=>{
   updateCopyrightYear();await fetchContent();
   if(backendReady&&!siteConfig.commerceEnabled&&document.querySelector('.cart-page')){location.replace('shop.html');return;}
-  try {if(backendReady){renderPublicContent();renderPageImages();renderProducts();renderLinksAndLegal();}
+  try {if(backendReady){renderPublicContent();renderHomeBackground();renderPageImages();renderProducts();renderLinksAndLegal();}
   else {const warning=document.createElement('p');warning.setAttribute('role','alert');warning.textContent=document.querySelector('.shop-page')?'Server unavailable. Catalogue content is temporarily unavailable.':'Server unavailable. Shop and checkout are temporarily disabled; your cart is saved.';document.querySelector('main')?.prepend(warning);document.querySelectorAll('[data-add-to-cart]').forEach(b=>b.disabled=true);}}
   finally {document.documentElement.classList.remove('content-loading');}
   renderCartPage();updateBagCount();bindImageFallbacks();initMatrix();
