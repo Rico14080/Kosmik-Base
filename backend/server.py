@@ -229,7 +229,7 @@ DEFAULT_CONTENT['live'] = []
 DEFAULT_CONTENT['legal'] = {'privacy':'', 'terms':'', 'shipping':'', 'returns':''}
 DEFAULT_SETTINGS = {
     'domain':'kosmikcircles.com', 'businessEmail':'gus@kosmikcircles.com',
-    'links':{'soundcloud':'','youtube':'','instagram':'','tiktok':'','facebook':''},
+    'links':[],
     'shipping':{'zones':[], 'freeThresholdCents':None,
                 'pickupEnabled':True,'pickupAddress':'','pickupInstructions':''}
 }
@@ -328,9 +328,26 @@ def activity(c, action, reference=''):
 def content_from_db(c):
     return visible_content(json.loads(c.execute('SELECT content FROM site_content WHERE id=1').fetchone()['content']))
 
+SOCIAL_LABELS={'soundcloud':'SoundCloud','youtube':'YouTube','instagram':'Instagram','tiktok':'TikTok','facebook':'Facebook'}
+
+def normalize_social_links(value):
+    source=([{'label':SOCIAL_LABELS.get(key,key.title()),'url':url} for key,url in value.items()]
+            if isinstance(value,dict) else value if isinstance(value,list) else [])
+    result=[]
+    for item in source:
+        if not isinstance(item,dict): continue
+        label=str(item.get('label','')).strip()[:100]
+        url=str(item.get('url','')).strip()[:2000]
+        parsed=urlparse(url)
+        if label and parsed.scheme=='https' and parsed.hostname and not parsed.username:
+            result.append({'label':label,'url':url})
+    return result[:50]
+
 def settings_from_db(c):
     row=c.execute('SELECT * FROM settings WHERE id=1').fetchone()
-    return json.loads(row['content']),row['version']
+    settings=deep_merge(DEFAULT_SETTINGS,json.loads(row['content']))
+    settings['links']=normalize_social_links(json.loads(row['content']).get('links',[]))
+    return settings,row['version']
 
 def catalog(c, admin=False):
     result=[]
@@ -442,8 +459,16 @@ def save_settings(c,payload):
     email=text(value.get('businessEmail'),'business email',200,True)
     if not valid_email(email): raise ApiError('Invalid email')
     links=value.get('links');shipping=value.get('shipping')
-    if not isinstance(links,dict) or not isinstance(shipping,dict): raise ApiError('Invalid settings')
-    clean={'domain':domain,'businessEmail':email,'links':{k:external_url(links.get(k,'')) for k in DEFAULT_SETTINGS['links']}}
+    if not isinstance(links,list) or len(links)>50 or not isinstance(shipping,dict): raise ApiError('Invalid settings')
+    clean_links=[]
+    for item in links:
+        if not isinstance(item,dict): raise ApiError('Invalid social link')
+        label=text(item.get('label',''),'social label',100)
+        url=text(item.get('url',''),'social URL',2000)
+        if not label and not url: continue
+        if not label or not url: raise ApiError('Each social link needs a label and HTTPS URL')
+        clean_links.append({'label':label,'url':external_url(url)})
+    clean={'domain':domain,'businessEmail':email,'links':clean_links}
     zones=shipping.get('zones',[])
     if not isinstance(zones,list) or len(zones)>50: raise ApiError('Invalid shipping zones')
     countries=set();clean_zones=[]
