@@ -57,6 +57,10 @@ def main() -> None:
                 if main.count() != 1:
                     failures.append(f"{path}: main content missing")
 
+                if path in {"index.html", "shop.html", "live.html", "contact.html"}:
+                    if page.locator(".bag-link, a[href*='cart.html']").count():
+                        failures.append(f"{path}: cart/bag navigation exists while commerce is disabled")
+
                 if page_errors:
                     failures.append(f"{path}: page errors: {' | '.join(page_errors)}")
             except Exception as exc:  # pragma: no cover - failure path for CI diagnostics
@@ -87,13 +91,41 @@ def main() -> None:
                     failures.append(f"shop.html: horizontal overflow at {width}px")
 
             page.goto(f"{base_url}/cart.html", wait_until="networkidle", timeout=15_000)
-            page.wait_for_selector("[data-cart-content]", state="visible", timeout=10_000)
-            if page.locator("[data-cart-content]").count() != 1:
-                failures.append("cart.html: cart container is missing")
+            if not page.url.endswith("/shop.html"):
+                failures.append("cart.html: commerce-off route does not return to the showcase")
+            if page.locator(".bag-link, a[href*='cart.html'], [data-cart-content]").count():
+                failures.append("cart.html: cart UI remains reachable while commerce is disabled")
             if page_errors:
                 failures.append(f"cart.html checkout flow: page errors: {' | '.join(page_errors)}")
         except Exception as exc:  # pragma: no cover - failure path for CI diagnostics
             failures.append(f"checkout flow: {type(exc).__name__}: {exc}")
+
+        # Final editorial layout: managed Home slots and left-column Shop/Contact content.
+        try:
+            for width in (1440, 1024, 768, 390):
+                page.set_viewport_size({"width": width, "height": 1000})
+                for path in ("index.html", "shop.html", "contact.html"):
+                    page.goto(f"{base_url}/{path}", wait_until="networkidle", timeout=15_000)
+                    if page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth"):
+                        failures.append(f"{path}: horizontal overflow at {width}px")
+            page.goto(f"{base_url}/index.html", wait_until="networkidle", timeout=15_000)
+            if page.locator(".home-intro > .home-editorial-slot [data-page-image='home-primary']").count() != 1:
+                failures.append("index.html: primary Home image is not in section 001 left slot")
+            if page.locator(".home-group > .home-editorial-slot [data-page-image='home-secondary']").count() != 1:
+                failures.append("index.html: secondary Home image is not in section 002 left slot")
+            if page.locator(".home-hero.has-background, .home-group-copy [data-page-image]").count():
+                failures.append("index.html: obsolete or duplicate Home image rendering remains")
+            page.goto(f"{base_url}/shop.html", wait_until="networkidle", timeout=15_000)
+            if page.locator(".shop-page .page-heading > .page-heading-info > .heading-note").count() != 1:
+                failures.append("shop.html: editorial description is not in the left hero column")
+            page.goto(f"{base_url}/contact.html", wait_until="networkidle", timeout=15_000)
+            if page.locator(".contact-page .page-heading-info [data-contact-description]").count() != 1 or page.locator(".contact-page .page-heading-info [data-contact-socials]").count() != 1:
+                failures.append("contact.html: description/social area is not in the left hero column")
+            for link in page.locator("[data-contact-socials] a").all():
+                if not (link.get_attribute("href") or "").startswith("https://") or link.get_attribute("target") != "_blank" or link.get_attribute("rel") != "noopener noreferrer":
+                    failures.append("contact.html: social link security attributes are invalid")
+        except Exception as exc:  # pragma: no cover - failure path for CI diagnostics
+            failures.append(f"editorial layout: {type(exc).__name__}: {exc}")
 
         browser.close()
 

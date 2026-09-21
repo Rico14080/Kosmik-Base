@@ -56,6 +56,12 @@ def main():
             content=ok('/admin/content',{'section':'home','value':home,'version':content['version']})
             assert content['content']['home']['groupTitleLineOne']=='Edited circle.'
             assert ok('/content')['home']['groupTitleLineOne']=='Edited circle.'
+            pages=copy.deepcopy(content['content']['pages']);pages['shop']['note']='Shop editorial description\nSecond line.'
+            content=ok('/admin/content',{'section':'pages','value':pages,'version':content['version']})
+            assert ok('/content')['pages']['shop']['note']=='Shop editorial description\nSecond line.'
+            contact_content=copy.deepcopy(content['content']['contact']);contact_content['description']='Contact editorial description\nSecond line.'
+            content=ok('/admin/content',{'section':'contact','value':contact_content,'version':content['version']})
+            assert ok('/content')['contact']['description']=='Contact editorial description\nSecond line.'
             matrix=copy.deepcopy(content['content']['matrix']);matrix['fontSize']=99
             content=ok('/admin/content',{'section':'matrix','value':matrix,'version':content['version']})
             assert content['content']['matrix']['fontSize']==32
@@ -120,10 +126,16 @@ def main():
             server.COMMERCE_ENABLED=True
             server.STRIPE_SECRET_KEY='test-placeholder';server.STRIPE_WEBHOOK_SECRET='signed-test';server.PUBLIC_BASE_URL='https://example.com';server.stripe_request=fake_stripe
             assert req('/checkout',payload)[0]==409 # no shipping price invented
-            conf=ok('/admin/settings');settings=conf['settings'];settings['businessEmail']='footer@example.com';settings['links']={key:f'https://example.com/{key}' for key in ('soundcloud','youtube','instagram','tiktok','facebook')};settings['shipping']['zones']=[{'name':'Italy','countries':['IT'],'priceCents':600},{'name':'Europe','countries':['DE','FR'],'priceCents':1200}]
+            with closing(server.db()) as c, c:
+                legacy_settings=json.loads(c.execute('SELECT content FROM settings WHERE id=1').fetchone()['content']);legacy_settings['links']={'instagram':'https://example.com/legacy-instagram'};c.execute('UPDATE settings SET content=? WHERE id=1',(json.dumps(legacy_settings),))
+            conf=ok('/admin/settings');assert conf['settings']['links']==[{'label':'Instagram','url':'https://example.com/legacy-instagram'}]
+            settings=conf['settings'];settings['businessEmail']='footer@example.com';settings['links']=[{'label':'Instagram','url':'https://example.com/instagram'},{'label':'SoundCloud','url':'https://example.com/soundcloud'}];settings['shipping']['zones']=[{'name':'Italy','countries':['IT'],'priceCents':600},{'name':'Europe','countries':['DE','FR'],'priceCents':1200}]
             conf=ok('/admin/settings',{'value':settings,'version':conf['version']})
             public_config=ok('/config');assert public_config['businessEmail']=='footer@example.com' and public_config['links']==settings['links']
-            unsafe=copy.deepcopy(settings);unsafe['links']['youtube']='javascript:alert(1)'
+            reordered=copy.deepcopy(conf['settings']);reordered['links'].reverse();conf=ok('/admin/settings',{'value':reordered,'version':conf['version']});assert ok('/config')['links'][0]['label']=='SoundCloud'
+            removed=copy.deepcopy(conf['settings']);removed['links']=removed['links'][:1];conf=ok('/admin/settings',{'value':removed,'version':conf['version']});assert len(ok('/config')['links'])==1
+            settings=copy.deepcopy(conf['settings']);settings['links']=[{'label':'Instagram','url':'https://example.com/instagram'},{'label':'SoundCloud','url':'https://example.com/soundcloud'}];conf=ok('/admin/settings',{'value':settings,'version':conf['version']})
+            unsafe=copy.deepcopy(settings);unsafe['links'][0]['url']='javascript:alert(1)'
             assert req('/admin/settings',{'value':unsafe,'version':conf['version']})[0]==400
             assert ok('/checkout/quote',payload)['totalCents']==1850
             international=copy.deepcopy(payload);international['customer']['country']='DE'
