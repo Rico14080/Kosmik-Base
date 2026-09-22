@@ -4,7 +4,7 @@ Sorgente ufficiale del sito del collettivo.
 
 ## Stato
 
-**Non pronto per la produzione.** La revisione del 18 settembre 2026 ha individuato blocchi di sicurezza, Admin e checkout ancora aperti. I test automatici esistenti passano, ma non coprono tutti i casi della revisione.
+**Pronto per configurazione e staging.** Il catalogo, CMS, Admin, inventario, checkout Stripe, webhook, backup e protezione dei file privati sono implementati. La produzione richiede ancora credenziali, contenuti reali e test con i servizi esterni.
 
 - [Elenco verificato dei problemi e priorità](docs/PHASE_2_SECURITY_AUDIT.md)
 - [Checklist unica per il lancio](docs/PRODUCTION_READINESS.md)
@@ -28,7 +28,7 @@ I JPEG originali e i WebP derivati non sono copie binarie identiche: conservare 
 
 1. Sviluppare su development o sul branch di lavoro dedicato; aggiornare main solo dopo test e revisione.
 2. Mantenere l'identità grafica salvo modifiche richieste.
-3. Correggere i controller esistenti, evitando ulteriori script di correzione sovrapposti.
+3. Il checkout pubblico e l'Admin usano un solo controller ciascuno: evitare script di correzione sovrapposti.
 4. Non committare .env, credenziali, database, upload privati, cache o log.
 5. Mantenere una sola checklist e un solo elenco dei problemi aggiornato.
 
@@ -41,7 +41,7 @@ $env:KOSMIK_ADMIN_PASSWORD = "SCEGLI_UNA_PASSWORD_LUNGA_E_CASUALE"
 python backend/server.py
 ```
 
-Aprire [sito locale](http://127.0.0.1:8080/) o [Admin](http://127.0.0.1:8080/admin.html). L'Admin presenta attualmente i problemi elencati nella revisione.
+Aprire [sito locale](http://127.0.0.1:8080/) o [Admin](http://127.0.0.1:8080/admin.html). L'Admin è organizzato in Dashboard, Orders, Products, Content e Settings.
 
 Il server legge le variabili dell'ambiente del processo: copiare `.env.example` in `.env` non le carica automaticamente. Per il lancio usare l'ambiente/secret manager dell'hosting.
 
@@ -54,4 +54,5 @@ python backend/tests/checkout_api_integration_test.py
 python backend/tests/security_http_regression_test.py
 ```
 
-Con server avviato: `python backend/tests/smoke_test.py`. Il test browser richiede Playwright e un browser Chromium disponibile; vedere la CI. Nessuno di questi controlli sostituisce pagamento, email, backup e verifica HTTPS in staging.
+Con server avviato: `python backend/tests/smoke_test.py`. Il test browser richiede Playwright e Chromium; la CI li installa. Nessuno di questi controlli sostituisce pagamento, email, backup e verifica HTTPS in staging.
+

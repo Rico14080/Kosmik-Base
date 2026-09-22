@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import tempfile
 import threading
+import http.client
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -56,7 +57,7 @@ def main() -> None:
         assert status == 200
         assert headers.get("X-Content-Type-Options") == "nosniff"
         assert headers.get("X-Frame-Options") == "SAMEORIGIN"
-        assert headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+        assert headers.get("Referrer-Policy") == "no-referrer"
         assert "frame-ancestors 'self'" in headers.get("Content-Security-Policy", "")
         assert "object-src 'none'" in headers.get("Content-Security-Policy", "")
 
@@ -65,15 +66,52 @@ def main() -> None:
         status, _, _ = get(base, "/backend/.env")
         assert status == 404, status
 
-        for path in ("/api/admin/orders", "/api/admin/messages", "/api/admin/stats", "/api/admin/gallery/albums"):
+        assert "script-src 'self';" in headers.get('Content-Security-Policy','')
+        assert headers.get("Permissions-Policy") == "camera=(), microphone=(), geolocation=()"
+        for path in ("/api/admin/orders", "/api/admin/messages", "/api/admin/stats"):
             status, _, body = get(base, path)
             assert status == 401, (path, status, body)
+        assert post(base, "/api/admin/content", b"{}")[0] == 401
 
         status, _, body = post(base, "/api/messages", b"{not-json")
         assert status == 400, (status, body)
 
         status, _, body = post(base, "/api/stripe/webhook", b"{}")
-        assert status == 400, (status, body)
+        assert status == 503, (status, body)
+        for path in ("/api/checkout", "/api/checkout/quote"):
+            status, _, body = post(base, path, b"{}")
+            assert status == 503, (path, status, body)
+        with server.db() as c:
+            assert c.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
+
+        (server.UPLOADS / "safe.png").write_bytes(b"fixture")
+        assert get(base, "/backend/uploads/safe.png")[0] == 200
+        for path in ('/backend/server.py','/backend/data/test.sqlite3','/backend/backups/test.zip','/.env','/.git/config','/README.md','/backend/tests/security_http_regression_test.py','/%62ackend/server.py','/backend/%64ata/test.sqlite3','/%2eenv','/../backend/server.py','/%2e%2e/backend/server.py','/%252e%252e/backend/server.py','/backend%5cserver.py','/backend/uploads/../data/test.sqlite3','/backend/uploads/%2e%2e/data/test.sqlite3','/backend/uploads/%252e%252e/data/test.sqlite3','/backend/uploads/safe.png%2f..%2fdata/test.sqlite3','/gallery.html','/api/gallery/albums','/api/admin/gallery/albums'):
+            for method in ('GET','HEAD'):
+                conn=http.client.HTTPConnection('127.0.0.1',httpd.server_address[1],timeout=5)
+                conn.request(method,path);response=conn.getresponse();assert response.status==404,(method,path,response.status)
+                body=response.read();assert method!='HEAD' or body==b'';conn.close()
+        class RequestContext:
+            client_address = ('127.0.0.1', 0)
+            headers = {'X-Forwarded-For': '203.0.113.2'}
+        previous_proxies = server.TRUSTED_PROXIES
+        try:
+            server.TRUSTED_PROXIES = set()
+            assert server.Handler.client_ip(RequestContext()) == '127.0.0.1'
+            server.TRUSTED_PROXIES = {'127.0.0.1'}
+            assert server.Handler.client_ip(RequestContext()) == '203.0.113.2'
+        finally:
+            server.TRUSTED_PROXIES = previous_proxies
+        for payload in (b'[]',b'null',b'"string"',b'123'):
+            assert post(base,'/api/messages',payload)[0]==400
+        assert post(base,'/api/messages',b'{}','text/plain')[0]==415
+        for path in ('/api/messages',):
+            conn=http.client.HTTPConnection('127.0.0.1',httpd.server_address[1],timeout=5)
+            conn.request('POST',path,body=b'',headers={'Content-Length':str(server.MAX_BODY+1),'Content-Type':'application/json'})
+            response=conn.getresponse();assert response.status==413;response.read();conn.close()
+        conn=http.client.HTTPConnection('127.0.0.1',httpd.server_address[1],timeout=5)
+        conn.request('POST','/api/stripe/webhook',body=b'',headers={'Content-Length':str(server.MAX_BODY+1),'Content-Type':'application/json'})
+        response=conn.getresponse();assert response.status==503;response.read();conn.close()
 
         print("SECURITY HTTP REGRESSION TEST PASS")
     finally:
@@ -84,3 +122,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

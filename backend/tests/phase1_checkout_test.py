@@ -72,6 +72,9 @@ def test_atomic_concurrent_reservation():
     assert row["stock"] == 5 and row["reserved_stock"] == 3
     order = c.execute("SELECT id FROM orders WHERE stock_reserved=3").fetchone()
     assert order is not None
+    # Legacy rows still have sufficient stored item data for payment finalization.
+    items = [{"productId":pid,"quantity":3,"name":"Test Product","priceCents":1000}]
+    c.execute('UPDATE orders SET items_json=? WHERE id=?',(json.dumps(items),order['id']))
     ok = server.apply_paid_order(c, order["id"], "cs_test")
     c.commit()
     assert ok is True
@@ -92,8 +95,9 @@ def test_expired_reservation_is_released():
     )
     c.execute("UPDATE products SET reserved_stock=1 WHERE id=?", (pid,))
     released = server.release_expired_reservations(c)
+    assert released == 0, 'A local timer must not release a possibly payable session'
+    server.release_order_reservation(c, 'EXPIRED')
     c.commit()
-    assert released == 1
     product = c.execute("SELECT reserved_stock FROM products WHERE id=?", (pid,)).fetchone()
     order = c.execute("SELECT status,stock_reserved,reservation_expires_at FROM orders WHERE id='EXPIRED'").fetchone()
     assert product["reserved_stock"] == 0
@@ -107,3 +111,4 @@ if __name__ == "__main__":
     test_atomic_concurrent_reservation()
     test_expired_reservation_is_released()
     print("PHASE1 CHECKOUT TEST PASS")
+

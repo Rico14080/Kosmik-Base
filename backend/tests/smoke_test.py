@@ -37,11 +37,12 @@ status, headers, health = request("/api/health")
 assert status == 200 and health.get("ok") is True
 status, _, content = request("/api/content")
 assert status == 200
-payload = content.get("content", {})
-for key in ("home", "pages", "shop", "gallery", "live", "contact", "us", "visuals", "siteText"):
+payload = content
+for key in ("home", "pages", "shop", "live", "contact", "visuals", "siteText", "legal"):
     assert key in payload, key
 for header in ("X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy", "Content-Security-Policy"):
     assert headers.get(header), header
 for path in ("/backend/server.py", "/backend/data/kosmik.db", "/backend/.env"):
     assert request(path)[0] == 404, path
 print(f"SMOKE PASS — {BASE} — backend {health.get('version')}")
+

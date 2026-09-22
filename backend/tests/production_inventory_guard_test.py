@@ -42,7 +42,7 @@ def must_reject(items):
     c = server.db()
     try:
         server.reserve_order_stock(c, items)
-    except (ValueError, RuntimeError):
+    except (ValueError, RuntimeError, server.ApiError):
         c.rollback()
         return
     finally:
@@ -70,8 +70,12 @@ def main():
 
     # Non-positive and out-of-contract quantities are rejected.
     pid = product(5)
-    for quantity in (0, -1, -99, 100):
+    for quantity in (0, -1, -99, 100, 1.5, True, '2', None):
         must_reject([{"productId": pid, "name": "Production Test", "quantity": quantity, "priceCents": 1000}])
+
+    # Duplicate cart lines are aggregated before availability is checked.
+    must_reject([{'productId':pid,'quantity':3},{'productId':pid,'quantity':3}])
+    must_reserve([{'productId':pid,'quantity':2},{'productId':pid,'quantity':3}],5)
 
     # Exact stock and one-unit stock boundaries are valid.
     pid = product(1)
@@ -90,3 +94,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

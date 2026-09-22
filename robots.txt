@@ -1,6 +1,9 @@
 User-agent: *
 Allow: /
 Disallow: /admin.html
+Disallow: /cart.html
 Disallow: /backend/
 Disallow: /api/
 Disallow: /docs/
+Sitemap: https://kosmikcircles.com/sitemap.xml
+

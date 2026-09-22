@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="content-loading">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,9 +8,17 @@
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="description" content="Kosmik Circles is an independent design and electronic culture studio making limited-run objects, visual work and live experiences.">
     <title>Kosmik Circles | Home</title>
+    <link rel="canonical" href="https://kosmikcircles.com/">
+    <meta property="og:title" content="Kosmik Circles | Home">
+    <meta property="og:description" content="Kosmik Circles is an independent design and electronic culture studio making limited-run objects, visual work and live experiences.">
+    <meta property="og:url" content="https://kosmikcircles.com/">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://raw.githubusercontent.com/Rico14080/Kosmik-Base/functional-mvp-v2/og-image.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/Rico14080/Kosmik-Base/functional-mvp-v2/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="manifest" href="site.webmanifest">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -18,8 +26,7 @@
     <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="site-header">
         <a class="wordmark" href="index.html" aria-label="Kosmik Circles home">KOSMIK<span>◉</span>CIRCLES</a>
-        <nav class="site-nav" aria-label="Main navigation"><a class="active" href="index.html"><span data-nav-label="home">Home</span></a><a href="shop.html"><span data-nav-label="shop">Shop</span> <sup data-shop-count>04</sup></a><a href="us.html"><span data-nav-label="us">Us</span></a><a href="live.html"><span data-nav-label="live">Live</span></a><a href="gallery.html"><span data-nav-label="gallery">Gallery</span></a><a href="contact.html"><span data-nav-label="contact">Contact</span></a></nav>
-        <a class="bag-link" href="cart.html" aria-label="Open cart"><span data-nav-label="bag">Bag</span> <span data-cart-count>0</span></a>
+        <nav class="site-nav" aria-label="Main navigation"><a class="active" href="index.html"><span data-nav-label="home">Home</span></a><a href="shop.html"><span data-nav-label="shop">Shop</span> <sup data-shop-count>04</sup></a><a href="live.html"><span data-nav-label="live">Live</span></a><a href="contact.html"><span data-nav-label="contact">Contact</span></a></nav>
     </header>
     <div class="market-ticker" aria-label="Live updates"><div class="ticker-track" data-ticker><span>PAST LIVE DATE / BERLIN 02.11.24 / ARCHIVE AVAILABLE</span><b>✳</b><span>ORBIT WEEK / 15% OFF WITH CODE KOSMIK15</span><b>✳</b><span>PAST LIVE DATE / LISBOA 24.01.25 / NEW TRANSMISSION SOON</span><b>✳</b></div></div>
 
@@ -31,9 +38,7 @@
                 <p class="hero-intro" data-home-intro>Small-batch goods for people who keep looking up. Wearable signals, useful artifacts, and a little cosmic noise.</p>
                 <a class="button button-light" data-home-cta href="shop.html">Enter the orbit <span>↗</span></a>
             </div>
-            <div class="orbit-art" aria-label="Hero image" role="img">
-                <img loading="eager" fetchpriority="high" decoding="async" class="hero-photo managed-image-slot" data-home-hero-image data-managed-image="true" alt="" hidden>
-            </div>
+            <div class="orbit-art" aria-hidden="true"></div>
             <div class="hero-index" data-home-hero-index>01 <span>/</span> 04</div>
         </section>
 
@@ -43,12 +48,17 @@
         </section>
 
         <section class="home-intro page-grid">
-            <p class="section-number" data-home-section-number>[ 001 ]</p>
+            <div class="home-editorial-slot"><p class="section-number" data-home-section-number>[ 001 ]</p><figure class="page-media home-editorial-media" data-page-media="home-primary" hidden><img data-page-image="home-primary" loading="lazy" decoding="async" alt=""></figure></div>
             <div>
                 <p class="eyebrow" data-home-intro-eyebrow>The short version</p>
                 <h2><span data-home-intro-title-one>Good things can</span><br><span data-home-intro-title-two>still feel unknown.</span></h2>
             </div>
             <p class="body-copy" data-home-intro-description>Kosmik Circles is a design studio making limited-run pieces with a point of view. We work slowly, source carefully, and leave enough room for the weirdness to get in.</p>
+        </section>
+        <section class="home-group page-grid">
+            <div class="home-editorial-slot"><p class="section-number">[ 002 ]</p><figure class="page-media home-editorial-media" data-page-media="home-secondary" hidden><img data-page-image="home-secondary" loading="lazy" decoding="async" alt=""></figure></div>
+            <div><p class="eyebrow" data-home-group-eyebrow>Who we are</p><h2><span data-home-group-title-one>One circle.</span><br><em data-home-group-title-two>Many signals.</em></h2></div>
+            <div class="home-group-copy"><p class="body-copy" data-home-group-description>Kosmik Circles is an independent collective exploring electronic music, visual experimentation and live experiences. We bring together sound, light and creative practice to build shared spaces, performances and collaborations.</p><p class="body-copy" data-home-group-secondary>Born from a shared interest in electronic culture, Kosmik Circles moves between DJ sets, audiovisual performance, experimental projects and events.</p></div>
         </section>
     </main>
 
@@ -59,5 +69,5 @@
     </footer>
 </body>
 <script src="site.js" defer></script>
-<script src="site-fixes.js" defer></script>
+
 </html>

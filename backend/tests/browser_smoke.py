@@ -12,10 +12,9 @@ PAGES = [
     "index.html",
     "shop.html",
     "cart.html",
-    "gallery.html",
     "live.html",
     "contact.html",
-    "us.html",
+    "legal.html",
     "404.html",
 ]
 
@@ -48,7 +47,7 @@ def main() -> None:
 
                 page.wait_for_selector("header.site-header", state="visible", timeout=10_000)
                 title = page.title()
-                if "Kosmik Circles" not in title:
+                if "kosmik circles" not in title.lower():
                     failures.append(f"{path}: unexpected title {title!r}")
 
                 if page.locator("header.site-header").count() != 1:
@@ -58,53 +57,77 @@ def main() -> None:
                 if main.count() != 1:
                     failures.append(f"{path}: main content missing")
 
+                if path in {"index.html", "shop.html", "live.html", "contact.html"}:
+                    if page.locator(".bag-link, a[href*='cart.html']").count():
+                        failures.append(f"{path}: cart/bag navigation exists while commerce is disabled")
+
                 if page_errors:
                     failures.append(f"{path}: page errors: {' | '.join(page_errors)}")
             except Exception as exc:  # pragma: no cover - failure path for CI diagnostics
                 failures.append(f"{path}: {type(exc).__name__}: {exc}")
 
-        # Functional public flow: shop -> cart. This intentionally stops
-        # before creating an order because the CI database has no sellable
-        # production inventory or payment provider configured.
+        # Commerce-off contract: the Shop is an informational showcase only.
         try:
             page_errors.clear()
             page.goto(f"{base_url}/shop.html", wait_until="networkidle", timeout=15_000)
-            page.wait_for_selector("[data-shop-products] .add-to-cart", state="visible", timeout=10_000)
-            first_product = page.locator("[data-shop-products] .product").first
-            if first_product.count() != 1:
-                failures.append("shop.html: product cards are missing")
-            add_button = first_product.locator(".add-to-cart")
-            if add_button.count() != 1:
-                failures.append("shop.html: add-to-cart control is missing")
-            else:
-                add_button.click()
-                page.wait_for_function(
-                    """() => {
-                        try {
-                            const cart = JSON.parse(localStorage.getItem('kosmik-circles-cart') || '[]');
-                            return Array.isArray(cart) && cart.length === 1 && Number(cart[0].quantity) === 1;
-                        } catch (_) { return false; }
-                    }""",
-                    timeout=5_000,
-                )
-                count = page.locator("[data-cart-count]").first
-                if count.count() != 1 or count.inner_text().strip() != "1":
-                    failures.append("shop.html: cart counter did not update after adding an item")
+            page.wait_for_selector("[data-shop-products]", state="visible", timeout=10_000)
+            cards = page.locator(".shop-showcase-card")
+            if cards.count() < 1:
+                failures.append("shop.html: showcase items are missing")
+            if cards.locator("img").count() < 1 or cards.locator("h2").count() != cards.count() or cards.locator(".shop-showcase-copy p").count() != cards.count():
+                failures.append("shop.html: image/title/description structure is incomplete")
+            if cards.locator("img[alt='']").count():
+                failures.append("shop.html: showcase image ALT fallback is missing")
+            purchase_selectors = "[data-shop-products] a, [data-shop-products] button, [data-shop-products] input, [data-shop-products] select, header a[href*='cart'], footer a[href*='cart']"
+            if page.locator(purchase_selectors).count():
+                failures.append("shop.html: interactive purchase path exists while commerce is disabled")
+            shop_text = page.locator("body").inner_text().lower()
+            for forbidden in ("add to cart", "buy now", "checkout", "stripe", "shipping", "quantity", "sold out", "€"):
+                if forbidden in shop_text:
+                    failures.append(f"shop.html: purchase text is exposed: {forbidden}")
+            for width in (1024, 768, 390):
+                page.set_viewport_size({"width": width, "height": 900})
+                if page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth"):
+                    failures.append(f"shop.html: horizontal overflow at {width}px")
 
             page.goto(f"{base_url}/cart.html", wait_until="networkidle", timeout=15_000)
-            page.wait_for_selector("[data-cart-content]", state="visible", timeout=10_000)
-            if page.locator("[data-order-form]").count() != 1:
-                failures.append("cart.html: order form is missing")
-            else:
-                for field in ("email", "name", "phone", "address", "city", "postcode", "country"):
-                    if page.locator(f"[data-order-form] [name='{field}']").count() != 1:
-                        failures.append(f"cart.html: order field {field!r} is missing")
-                if page.locator("[data-order-form] button[type='submit']").count() != 1:
-                    failures.append("cart.html: order submit button is missing")
+            if not page.url.endswith("/shop.html"):
+                failures.append("cart.html: commerce-off route does not return to the showcase")
+            if page.locator(".bag-link, a[href*='cart.html'], [data-cart-content]").count():
+                failures.append("cart.html: cart UI remains reachable while commerce is disabled")
             if page_errors:
                 failures.append(f"cart.html checkout flow: page errors: {' | '.join(page_errors)}")
         except Exception as exc:  # pragma: no cover - failure path for CI diagnostics
             failures.append(f"checkout flow: {type(exc).__name__}: {exc}")
+
+        # Final editorial layout: managed Home slots and left-column Shop/Contact content.
+        try:
+            for width in (1440, 1024, 768, 390):
+                page.set_viewport_size({"width": width, "height": 1000})
+                for path in ("index.html", "shop.html", "contact.html"):
+                    page.goto(f"{base_url}/{path}", wait_until="networkidle", timeout=15_000)
+                    if page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth"):
+                        failures.append(f"{path}: horizontal overflow at {width}px")
+            page.goto(f"{base_url}/index.html", wait_until="networkidle", timeout=15_000)
+            if page.locator(".home-intro > .home-editorial-slot [data-page-image='home-primary']").count() != 1:
+                failures.append("index.html: primary Home image is not in section 001 left slot")
+            if page.locator(".home-group > .home-editorial-slot [data-page-image='home-secondary']").count() != 1:
+                failures.append("index.html: secondary Home image is not in section 002 left slot")
+            if page.locator(".home-group-copy [data-page-image]").count():
+                failures.append("index.html: obsolete or duplicate Home image rendering remains")
+            if page.locator(".home-hero.has-background").count() != 1:
+                failures.append("index.html: Home hero background is missing")
+            page.goto(f"{base_url}/shop.html", wait_until="networkidle", timeout=15_000)
+            if page.locator(".shop-page .page-heading > .page-heading-info > .heading-note").count() != 1:
+                failures.append("shop.html: editorial description is not in the left hero column")
+            page.goto(f"{base_url}/contact.html", wait_until="networkidle", timeout=15_000)
+            if page.locator(".contact-page .page-heading-info [data-contact-description]").count() != 1 or page.locator(".contact-page .page-heading-info [data-contact-socials]").count() != 1:
+                failures.append("contact.html: description/social area is not in the left hero column")
+            for link in page.locator("[data-contact-socials] a").all():
+                if not (link.get_attribute("href") or "").startswith("https://") or link.get_attribute("target") != "_blank" or link.get_attribute("rel") != "noopener noreferrer":
+                    failures.append("contact.html: social link security attributes are invalid")
+        except Exception as exc:  # pragma: no cover - failure path for CI diagnostics
+            failures.append(f"editorial layout: {type(exc).__name__}: {exc}")
 
         browser.close()
 
@@ -113,9 +136,10 @@ def main() -> None:
 
     print(
         f"Browser smoke PASS: {len(PAGES)} public pages served, initialized without page errors, "
-        "and shop -> cart flow verified."
+        "and commerce-off Shop showcase verified."
     )
 
 
 if __name__ == "__main__":
     main()
+
