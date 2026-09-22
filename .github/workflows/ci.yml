@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          files=(backend/server.py backend/backup.py backend/tests/smoke_test.py backend/tests/phase1_checkout_test.py backend/tests/production_inventory_guard_test.py backend/tests/checkout_api_integration_test.py backend/tests/security_http_regression_test.py backend/tests/browser_smoke.py)
+          files=(backend/server.py backend/backup.py backend/tests/smoke_test.py backend/tests/phase1_checkout_test.py backend/tests/production_inventory_guard_test.py backend/tests/checkout_api_integration_test.py backend/tests/security_http_regression_test.py backend/tests/contact_admin_persistence_test.py backend/tests/browser_smoke.py)
           present=()
           for f in "${files[@]}"; do
             if test -f "$f"; then present+=("$f"); fi
@@ -62,6 +62,12 @@ jobs:
         run: |
           set -e
           python backend/tests/security_http_regression_test.py
+
+      - name: Run Contact/Admin persistence integration tests
+        shell: bash
+        run: |
+          set -e
+          python backend/tests/contact_admin_persistence_test.py
 
       - name: Validate Admin/CSP resource wiring
         shell: bash
@@ -115,4 +121,3 @@ jobs:
             echo 'Environment/database file is tracked by Git.'
             exit 1
           fi
-
